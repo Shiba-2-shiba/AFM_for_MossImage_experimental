@@ -32,7 +32,12 @@ def edit_image_rows(q, k, v, layout, config, progress, chunks, scale):
                 del text_logits
                 for qs in range(0, images, chunks.query_chunk_size):
                     qe = min(qs + chunks.query_chunk_size, images)
-                    scores = (qi[:, :, qs:qe] @ kh.transpose(-2, -1)) * scale
+                    # The text-key product was already computed for the full-grid FFT.
+                    scores = torch.empty((1, end - start, qe - qs, layout.total_tokens),
+                                         dtype=torch.float32, device=q.device)
+                    scores[:, :, :, :images] = (
+                        qi[:, :, qs:qe] @ kh[:, :, :images].transpose(-2, -1))
+                    scores[:, :, :, :images].mul_(scale)
                     scores[:, :, :, images:] = edited[:, :, qs:qe]
                     output = scores.softmax(-1) @ vh
                     if not torch.isfinite(output).all():
@@ -43,17 +48,17 @@ def edit_image_rows(q, k, v, layout, config, progress, chunks, scale):
     return result
 
 
-def replace_rows(baseline, image_rows, selected, layout, heads, skip_output_reshape=False):
+def write_image_rows(candidate, image_rows, selected, layout, heads, skip_output_reshape=False):
+    """Write only into a private candidate; callers retain the untouched native baseline."""
     if not torch.isfinite(image_rows).all():
         raise FloatingPointError("Nonfinite replacement")
     if image_rows.shape[:3] != (len(selected), heads, layout.image_tokens):
         raise ValueError("Invalid edited image-row shape")
     dim = image_rows.shape[-1]
-    expected = ((baseline.shape[0], heads, layout.total_tokens, dim) if skip_output_reshape
-                else (baseline.shape[0], layout.total_tokens, heads * dim))
-    if tuple(baseline.shape) != expected:
+    expected = ((candidate.shape[0], heads, layout.total_tokens, dim) if skip_output_reshape
+                else (candidate.shape[0], layout.total_tokens, heads * dim))
+    if tuple(candidate.shape) != expected:
         raise ValueError("Native attention output layout changed")
-    candidate = baseline.clone()
     for index, row in enumerate(selected):
         if skip_output_reshape:
             candidate[row, :, :layout.image_tokens] = image_rows[index]
@@ -61,3 +66,10 @@ def replace_rows(baseline, image_rows, selected, layout, heads, skip_output_resh
             candidate[row, :layout.image_tokens] = image_rows[index].transpose(0, 1).reshape(
                 layout.image_tokens, heads * dim)
     return candidate
+
+
+def replace_rows(baseline, image_rows, selected, layout, heads, skip_output_reshape=False):
+    """Copy-on-write convenience entry point; never mutate the supplied baseline."""
+    candidate = baseline.clone()
+    return write_image_rows(candidate, image_rows, selected, layout, heads,
+                            skip_output_reshape)

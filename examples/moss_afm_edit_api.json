@@ -151,7 +151,7 @@
       ],
       "mode": "edit",
       "strength": 0.05,
-      "block_scope": "0",
+      "block_scope": "0-2",
       "branch_mode": "positive_only"
     },
     "_meta": {

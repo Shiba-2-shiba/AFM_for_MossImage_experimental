@@ -20,7 +20,7 @@ for mode in ["baseline", "observe", "edit"]:
         workflow["38"] = {
             "class_type": "MossImageAFM",
             "inputs": {"model": ["28", 0], "mode": mode, "strength": 0.05,
-                       "block_scope": "0", "branch_mode": "positive_only"},
+                       "block_scope": "0-2", "branch_mode": "positive_only"},
             "_meta": {"title": "MOSS Image AFM"}}
         workflow["31"]["inputs"]["model"] = ["38", 0]
     (out / ("moss_afm_" + mode + "_api.json")).write_text(

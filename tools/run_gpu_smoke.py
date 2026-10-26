@@ -1,5 +1,6 @@
 """Run native MOSS inference in a separate process without restarting the active server."""
 import argparse
+from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
@@ -37,12 +38,17 @@ import folder_paths
 import nodes
 
 from afm.adapter import install_afm
-from afm.config import AFMConfig
+from tools.smoke_contract import (compare_latents, mode_config, parse_modes,
+                                  workflow_config)
 
 folder_paths.set_output_directory(str(out))
 workflow_path = Path(options.workflow)
 workflow = json.loads(workflow_path.read_text(encoding="utf-8-sig"))
 inputs = workflow["31"]["inputs"]
+base_config = workflow_config(workflow)
+modes = parse_modes(options.modes)
+if base_config.logging == "off":
+    raise ValueError("Smoke verification requires logging=summary")
 model_root = Path(options.model_root)
 model_path = model_root / "DiffusionModels" / workflow["28"]["inputs"]["unet_name"]
 clip_path = model_root / "TextEncoders" / workflow["30"]["inputs"]["clip_name"]
@@ -56,6 +62,7 @@ report = {"source_sha256": source_hashes, "status": "running", "workflow_sha256"
           "cfg": options.cfg if options.cfg is not None else inputs["cfg"],
           "sampler": inputs["sampler_name"], "scheduler": inputs["scheduler"],
           "torch_version": torch.__version__, "hip": torch.version.hip, "runs": [],
+          "afm_config": asdict(base_config),
           "scope": "Separate native ComfyUI process, not active server node registration"}
 
 def save_report():
@@ -73,10 +80,9 @@ try:
         print("Loading VAE", flush=True)
         vae = comfy.sd.VAE(sd=comfy.utils.load_torch_file(str(vae_path)))
         baseline = None
-        for mode in options.modes.split(","):
+        for mode in modes:
             print("RUN " + mode, flush=True)
-            config = AFMConfig(mode="off" if mode == "baseline" else ("edit" if mode == "zero" else mode),
-                               strength=0 if mode == "zero" else 0.05)
+            config = mode_config(base_config, mode)
             patched = model if mode == "baseline" else install_afm(model, config)
             latent = {"samples": torch.zeros(options.batch, 128, options.height // 16,
                                              options.width // 16)}
@@ -91,12 +97,11 @@ try:
             if mode == "baseline":
                 baseline = values.clone()
             row = {"mode": mode, "sample_seconds": time.perf_counter() - started,
-                   "finite": True, "latent_shape": list(values.shape)}
-            if baseline is not None:
-                row["max_abs_vs_baseline"] = float((values - baseline).abs().max())
-                row["equal_to_baseline"] = torch.equal(values, baseline)
+                   "finite": True, "latent_shape": list(values.shape),
+                   "afm_config": asdict(config)}
+            row.update(compare_latents(mode, values, baseline, require_equal=config.bypass))
             new_logs = set((out / "moss_afm").glob("*.jsonl")) - before_logs
-            if mode in ("observe", "edit"):
+            if not config.bypass:
                 if len(new_logs) != 1:
                     raise RuntimeError("Expected one AFM run log")
                 entries = [json.loads(x) for x in next(iter(new_logs)).read_text().splitlines()]

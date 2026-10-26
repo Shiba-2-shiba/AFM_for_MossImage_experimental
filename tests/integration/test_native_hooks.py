@@ -31,7 +31,7 @@ class NativeTests(unittest.TestCase):
         from comfy.ldm.moss_image.model import MOSSImage
         from comfy.model_patcher import ModelPatcher
         torch.manual_seed(33)
-        native = MOSSImage(dim=64, ffn_dim=96, num_heads=2, num_layers=2,
+        native = MOSSImage(dim=64, ffn_dim=96, num_heads=2, num_layers=3,
                            text_dim=16, latent_channels=8, fused_qkv=fused,
                            device="cpu", dtype=torch.float32,
                            operations=comfy.ops.disable_weight_init)
@@ -60,7 +60,7 @@ class NativeTests(unittest.TestCase):
             options["cond_or_uncond"] = [0]
             observed = native(x.clone(), t, text, options)
             torch.testing.assert_close(observed, original, atol=0, rtol=0)
-            self.assertEqual(state.observed_calls, 2)
+            self.assertEqual(state.observed_calls, 3)
             self.assertEqual(state.model_evaluations, 1)
             self.assertNotIn("patches_replace", model.model_options["transformer_options"])
             self.assertTrue(clone.get_all_wrappers(WrappersMP.OUTER_SAMPLE))

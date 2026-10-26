@@ -52,7 +52,7 @@ def parse_block_scope(scope: str, block_count: int) -> frozenset[int]:
 class AFMConfig:
     mode: str = "observe"
     strength: float = 0.05
-    block_scope: str = "0"
+    block_scope: str = "0-2"
     branch_mode: str = "positive_only"
     start_percent: float = 0.0
     end_percent: float = 1.0

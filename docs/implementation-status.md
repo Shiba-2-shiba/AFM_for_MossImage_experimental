@@ -1,98 +1,80 @@
-# Implementation status — 2026-10-24
+# Implementation status — updated 2026-10-26
 
-Source staging: `参考/implementation/AFM_for_MossImage`.
-Planned deployment: `C:/ComfyUI/custom_nodes/AFM_for_MossImage`.
+## Current owner-confirmed status
 
-## Implemented
+- The node is in use in the owner's real ComfyUI environment.
+- All layers were compared in three-layer groups; `0-2`, `24-26`, `30-32` were
+  selected. Default `0-2` and these three choices are authoritative.
+- Owner-observed uses are overall improvement, emotional-expression emphasis,
+  and pose changes respectively. These are empirical selections, not universal
+  guarantees across every prompt/model/seed.
+- Validation images exist locally and are deliberately excluded to keep the
+  repository lightweight. No image upload or additional deployment gate is needed.
+- The exact model/prompt/seed/count matrix for that full-layer sweep has not been
+  supplied in the repository. Do not substitute the historical smoke matrix below
+  for the preset-selection experiment.
 
-- V3 `MossImageAFM` MODEL patch node.
-- Native MOSS image-first partition; text refinement excluded.
-- FP32 spatial FFT on full H×W, complementary radial masks and optional DC preservation.
-- Curve schedule, joint all-key softmax, head/query chunks and workspace guard.
-- Off/zero no-hook path; observe preserves the native dispatcher and preferred backend.
-- One native baseline call; selected CFG image rows replaced atomically.
-- Run-scoped state, callback-owned Euler/ER-SDE steps, cleanup on exceptions and interrupt.
-- Summary JSONL with configuration, versions, actual grid/text length/branches and results.
-- Baseline/observe/edit API examples preserving the specified workflow.
-- UI graph draft; browser load/save/reload is pending installation.
+These statements are the owner's 2026-10-26 clarification. The current maintenance
+pass did not inspect the local image collection or rerun the owner's GPU workflow.
+No particular browser load/save/reload procedure is inferred from general real-device use.
 
-## Verified
+## Implemented foundations
 
-Actual runtime: Python 3.12.11, PyTorch 2.12.0+rocm7.14.0,
-AMD Radeon AI PRO R9700, local ComfyUI source
-8f04fd6ecf4a548937971e840af2a985529fab76.
+Native V3 MODEL patch, image-first partition excluding text-refinement blocks,
+FP32 actual-grid FFT, complementary radial masks and optional DC preservation,
+progress-aligned gains, joint all-key softmax, head/query chunking and workspace
+budget checks. Off/zero install no new hooks; observe keeps native dispatch.
+The native output is retained for unselected CFG/text rows and recognized edit
+failures. Run-scoped callbacks and cleanup protect sampler state.
 
-All tests in ComfyUI venv: **23 passed** using unittest discovery.
-Global CPU pytest: **18 passed, 5 native tests skipped**; the skipped native
-tests are included in the 23 passing venv tests. These are overlapping counts.
+## 2026-10-26 maintenance changes
 
-Native contract tests cover fused/unfused QKV, actual model forward,
-no-op cloning, duplicate patch rejection, V3 schema, real Euler/ER-SDE
-callback loops including first-sigma adjustment.
-Numerical tests cover known frequency bands, DC, rectangle topology,
-joint normalization, chunk equivalence, CFG/text preservation, failure
-atomicity, container consumption, progress/cleanup and workspace rejection.
+- Core default, node default, API/UI examples and API generator agree on `0-2`.
+- Native miniature fixture has three layers, sufficient for the shipped default.
+  Off-mode validation policy is otherwise unchanged.
+- Smoke helper consumes the workflow's AFM settings rather than silently testing
+  a different default. No-op equality is an assertion, not just a report field.
+- One private candidate clone per edited attention call replaces repeated full
+  output clones. Partial failure still returns the untouched native baseline.
+- Query chunks compute image-key logits only; filtered text-key logits are reused.
+  FFT gains/masks, schedule, branch selection and softmax semantics are unchanged.
+- Stale 0.1.0 distribution ZIP replaced by a deterministic source-archive builder.
 
-### GPU generation
+Current CPU verification is recorded in [maintenance review](final-review.md).
+Numerical equivalence is tolerance-based, not a claim of bitwise-identical edited
+GPU outputs. Actual speed/VRAM improvements are not measured in this maintenance pass.
 
-All runs use the supplied INT8 MoodyMoss model, Qwen3.5 INT8 encoder and Flux2 VAE.
+## Historical implementation evidence (2026-10-24)
 
-| Configuration | Controls and results |
+The original implementation record reports Python 3.12.11, PyTorch 2.12.0+rocm7.14.0,
+AMD Radeon AI PRO R9700 and native ComfyUI commit
+`8f04fd6ecf4a548937971e840af2a985529fab76`.
+It reports 23 passing tests in that ComfyUI venv, including the overlapping CPU
+subset of 18 passed / 5 native skipped. Those counts are historical and must not
+be interpreted as a rerun of today's source.
+
+Reported separate-process generation used an INT8 MoodyMoss model, Qwen3.5 INT8
+encoder and Flux2 VAE:
+
+| Configuration | Historical result |
 |---|---|
 | 512×512, 3 steps, CFG 2.5, ER-SDE/simple | baseline/off/zero/observe/edit succeeded |
-| **1024×1024, 25 steps, CFG 2.5, ER-SDE/simple** | baseline/off/zero/observe/edit succeeded |
-| 768×1024, 3 steps, batch 2, CFG 1, ER-SDE/simple | baseline/observe/edit succeeded; actual grid 64×48 and BF16 attention recorded |
+| 1024×1024, 25 steps, CFG 2.5, ER-SDE/simple | baseline/off/zero/observe/edit succeeded |
+| 768×1024, 3 steps, batch 2, CFG 1, ER-SDE/simple | baseline/observe/edit succeeded |
 
-For both square cases, off/zero/observe latent tensors are **bitwise equal**
-to baseline. Rectangular observe is also bitwise equal.
-Nonzero edit produces finite, changed latent tensors; edit reached every
-target step, with **zero fallback calls**.
-The normal 25-step run records 25 edited calls on the selected positive branch.
+The record states no-op latent equality, finite changed edit latents, and zero
+fallback calls. Its normal run recorded 25 edited calls using the old smoke
+configuration (single block `0`), not the new three-block default. These smoke
+checks do not describe the later full-layer preset-selection sweep.
+Original `test-results` logs/images are local, not included in this repository;
+this maintenance pass does not independently re-certify those raw artifacts.
 
-Evidence is under `test-results/gpu-small`, `gpu-standard`,
-`gpu-rect-batch2`, and `test-results-native.log`.
-The rectangle run also records source-file SHA-256 values.
-The normal run predates the addition of deduplicated layout metadata; its
-numerical kernel and hook implementation are unchanged.
+Old staging/write-scope restrictions were session-specific and are no longer a
+current deployment blocker, given the owner's real-device operation confirmation.
 
-These are separate-process native ComfyUI inference checks.
-They do not establish active-server registration or browser workflow round-trip.
-The helper records elapsed time only as execution evidence, not a controlled
-performance benchmark. No image-quality benefit is claimed.
+## Remaining optional work / unsupported combinations
 
-### Nonblocking environment observations
-
-- Standalone model loading emits upstream unexpected `.comfy_quant` key
-  warnings. Native generation completed with finite outputs.
-- Python interpreter shutdown emits existing ModelPatcher destructor warnings
-  after the completed separate-process runs. Terminal reports and images
-  are saved before shutdown.
-- Global Python cannot run native contracts because its comfy_aimdo package differs;
-  those tests run successfully in the actual ComfyUI venv.
-- Ruff/typecheck tooling is not installed. AST parsing, whitespace checks and
-  compileall pass; a full linter/typechecker was not run.
-
-## Remaining deployment gate
-
-This session can write only under `C:/ComfyUI/custom_nodes/AFM_for_MossImage/参考`.
-The intended parent directory is outside that filesystem write scope.
-No workaround was used to write outside the granted scope.
-
-Parent deployment, restart with the existing launch arguments,
-`GET /api/object_info/MossImageAFM`, active-server prompt execution and
-browser UI load/save/reload remain pending. These are the remaining A5/A6
-installation checks, not verified successes.
-
-## Exclusions
-
-Quality/spectral/statistical/performance evaluation remains in the separate
-evaluation plan. HF loader plugin, Slider/other model patches, skip-cache,
-compile, multiple GPUs and unqualified samplers remain unsupported.
-
-## Review
-
-A native code-reviewer agent was attempted, but its configured gpt-5.4 model
-was unavailable for this account. Final review was therefore a separate
-author self-review, supported by the unit/native/GPU evidence above.
-No unresolved code correctness issue was identified in that pass.
-Independent review remains a stated verification gap.
+Measured performance/memory profiling and controlled frequency-attribution studies
+can extend the evidence, but are not prerequisites for current use. HF loader
+plugins, Slider/other patches, skip-cache, compilation and multi-GPU remain
+unqualified. The workspace estimate is not a total-device-memory guarantee.

@@ -26,6 +26,47 @@ class Container:
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_multiple_rows_clone_once_and_failure_keeps_native_baseline(self):
+        from unittest.mock import patch
+        from afm.attention import edit_image_rows
+        config = AFMConfig(mode="edit", branch_mode="both", logging="off",
+                           fail_mode="fallback_original")
+        flat = [torch.randn(3, 10, 12) for _ in range(3)]
+        baseline = torch.randn(3, 10, 12)
+        original = baseline.clone()
+        clones = []
+        native_clone = torch.Tensor.clone
+
+        def clone(tensor, *args, **kwargs):
+            clones.append(tuple(tensor.shape))
+            return native_clone(tensor, *args, **kwargs)
+
+        for fail in (False, True):
+            state = RunState(2, config)
+            hook = AttentionOverride(config, state,
+                    {"layout": TokenLayout((2, 3), 4), "branches": [0], "block": 0},
+                    None, lambda *a, **kw: baseline)
+            calls = []
+
+            def kernel(*args, **kwargs):
+                calls.append(1)
+                if fail and len(calls) == 2:
+                    raise FloatingPointError("second row failure")
+                return edit_image_rows(*args, **kwargs)
+
+            clones.clear()
+            with patch.object(torch.Tensor, "clone", clone), \
+                    patch("afm.adapter.edit_image_rows", kernel):
+                got = hook.container_function(*flat, 3)
+            self.assertEqual(clones.count(tuple(baseline.shape)), 1)
+            self.assertTrue(torch.equal(baseline, original))
+            if fail:
+                self.assertIs(got, baseline)
+                self.assertEqual(state.fallback_calls, 1)
+            else:
+                self.assertTrue(torch.equal(got[:, 6:], baseline[:, 6:]))
+                self.assertEqual(state.edited_calls, 1)
+
     def test_cfg_layout_uses_metadata_not_batch_position(self):
         self.assertEqual(branch_rows([1, 0], 4, "positive_only"), (2, 3))
         self.assertEqual(branch_rows([0], 2, "positive_only"), (0, 1))

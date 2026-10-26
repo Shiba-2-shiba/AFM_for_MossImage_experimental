@@ -1,4 +1,10 @@
-# Implementation ledger — .omx/plans/moss-afm-2026-10-24/implementation-plan.md
+# Historical implementation ledger (2026-10-24)
+
+This is a historical snapshot, not the current deployment or verification status.
+The owner confirmed real ComfyUI use and validated presets on 2026-10-26.
+Old staging/permission blockers below are superseded; see implementation-status.md.
+
+# Original implementation notes
 
 - Ruling: isolated package staged under 参考/implementation/AFM_for_MossImage because the planned parent deployment directory is outside the session write scope. No writes to parent or ComfyUI core. Cost: live installation remains gated by actual workspace authority.
 - Ruling: project is new and has no git repository; use this ledger and test evidence rather than skill scripts that require an existing git history. No existing main branch is modified.

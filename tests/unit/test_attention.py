@@ -36,6 +36,40 @@ class AttentionTests(unittest.TestCase):
         expected = ((self.q @ self.k.transpose(-2, -1) * 0.5).softmax(-1) @ self.v)[:, :, :6]
         torch.testing.assert_close(got, expected, atol=2e-5, rtol=2e-5)
 
+    def test_text_key_product_is_not_recomputed_in_query_chunks(self):
+        original = torch.Tensor.__matmul__
+        key_lengths = []
+
+        def matmul(left, right):
+            # QK products have right's penultimate dimension equal to head_dim.
+            if right.shape[-2] == 4:
+                key_lengths.append(right.shape[-1])
+            return original(left, right)
+
+        chunks = plan_chunks(self.q.shape, 4, self.layout, 64, 1, 2)
+        with patch.object(torch.Tensor, "__matmul__", matmul):
+            edit_image_rows(self.q, self.k, self.v, self.layout,
+                            self.config, 0, chunks, 0.5)
+        self.assertNotIn(self.layout.total_tokens, key_lengths)
+        self.assertIn(self.layout.image_tokens, key_lengths)
+
+    def test_joint_oracle_all_progress_dtype_scale_and_chunks(self):
+        for dtype, tolerance in ((torch.float32, 2e-5), (torch.bfloat16, 0.02),
+                                 (torch.float16, 0.002)):
+            q, k, v = [x.to(dtype) for x in (self.q, self.k, self.v)]
+            for progress in (0, 0.5, 1):
+                alpha = schedule_alphas(self.config.strength, progress)
+                logits = q.float() @ k.float().transpose(-2, -1) * 0.3
+                logits[:, :, :6, 6:] = filter_logits(
+                    logits[:, :, :6, 6:], (2, 3), *alpha)
+                expected = (logits.softmax(-1) @ v.float())[:, :, :6].to(dtype)
+                for heads, queries in ((1, 2), (3, 6)):
+                    chunks = plan_chunks(q.shape, q.element_size(), self.layout,
+                                         64, heads, queries)
+                    got = edit_image_rows(q, k, v, self.layout, self.config,
+                                          progress, chunks, 0.3)
+                    torch.testing.assert_close(got, expected, atol=tolerance, rtol=tolerance)
+
     def test_atomic_partial_replacement_preserves_other_rows(self):
         base = torch.randn(2, 10, 12)
         original = base.clone()

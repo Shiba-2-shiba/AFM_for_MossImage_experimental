@@ -3,7 +3,7 @@ import math
 
 import torch
 
-from .attention import edit_image_rows, replace_rows
+from .attention import edit_image_rows, write_image_rows
 from .config import parse_block_scope
 from .memory import MemoryGuardError, plan_chunks
 from .runtime import (CONFIG_KEY, CONTEXT_KEY, RUN_KEY, RunState, branch_rows,
@@ -97,12 +97,12 @@ class AttentionOverride:
         # Backend errors propagate. Only an edit failure may return this baseline.
         baseline = self.dispatcher(q, k, v, heads, **call_kwargs)
         try:
-            candidate = baseline
+            candidate = baseline.clone()
             for row in selected:
                 images = edit_image_rows(*(x[row:row+1] for x in shaped),
                                          layout, config, state.progress, chunks, scale)
-                candidate = replace_rows(candidate, images, [row], layout, heads,
-                                         kwargs.get("skip_output_reshape", False))
+                write_image_rows(candidate, images, [row], layout, heads,
+                                 kwargs.get("skip_output_reshape", False))
             if not torch.isfinite(candidate).all():
                 raise FloatingPointError("Nonfinite native or edited output")
         except (FloatingPointError, MemoryGuardError, torch.OutOfMemoryError, ValueError) as exc:
