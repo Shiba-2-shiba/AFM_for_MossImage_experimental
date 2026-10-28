@@ -29,6 +29,8 @@ def workflow_config(workflow):
     config = AFMConfig(**values)
     if config.block_scope not in ("0-2", "24-26", "30-32"):
         raise ValueError("block_scope must match a current node preset")
+    if config.two_interval_mode and config.second_block_scope not in ("0-2", "24-26", "30-32"):
+        raise ValueError("second_block_scope must match a current node preset")
     return config
 
 

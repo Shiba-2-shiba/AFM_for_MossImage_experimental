@@ -8,6 +8,36 @@ from afm.config import AFMConfig
 
 
 class SmokeContractTests(unittest.TestCase):
+    def test_old_api_omits_second_interval(self):
+        config = self.helpers().workflow_config(self.workflow())
+        self.assertFalse(config.two_interval_mode)
+        self.assertEqual([config.active_interval(p) for p in (0, 0.5, 1)], [1, 1, 1])
+
+    def test_two_interval_settings_survive_mode_variants(self):
+        helpers = self.helpers()
+        config = helpers.workflow_config(self.workflow(
+            block_scope="30-32", end_percent=0.5, two_interval_mode=True,
+            second_block_scope="24-26", second_start_percent=0.4, second_end_percent=0.9))
+        for mode in ("baseline", "off", "zero", "observe", "edit"):
+            selected = helpers.mode_config(config, mode)
+            self.assertTrue(selected.two_interval_mode)
+            self.assertEqual((selected.block_scope, selected.end_percent,
+                              selected.second_block_scope, selected.second_start_percent,
+                              selected.second_end_percent), ("30-32", 0.5, "24-26", 0.4, 0.9))
+
+    def test_secondary_preset_validation_respects_enabled_mode(self):
+        helpers = self.helpers()
+        for scope in ("0-2", "24-26", "30-32"):
+            config = helpers.workflow_config(self.workflow(two_interval_mode=True,
+                                                           second_block_scope=scope))
+            self.assertEqual(config.second_block_scope, scope)
+        for scope in ("all", "0", "invalid"):
+            with self.subTest(scope=scope), self.assertRaises(ValueError):
+                helpers.workflow_config(self.workflow(two_interval_mode=True,
+                                                       second_block_scope=scope))
+            helpers.workflow_config(self.workflow(two_interval_mode=False,
+                                                   second_block_scope=scope))
+
     def helpers(self):
         try:
             return importlib.import_module("tools.smoke_contract")

@@ -12,7 +12,7 @@ class MossImageAFM(io.ComfyNode):
             category="model/patches/moss_image",
             description=("Native MOSS-Image向けAFM。0-2: 全体の改善。"
                          "24-26: 感情表現などの強調。30-32: ポーズなどの変化。"
-                         "いずれか一つを選択します。"),
+                         "各区間で一つを選択します。2区間モードは重複時に第1区間を優先します。"),
             inputs=[
                 io.Model.Input("model"),
                 io.Combo.Input("mode", options=["off", "observe", "edit"], default="observe"),
@@ -41,6 +41,18 @@ class MossImageAFM(io.ComfyNode):
                                default="raise", advanced=True),
                 io.Combo.Input("logging", options=["off", "summary"], default="summary",
                                advanced=True),
+                io.Boolean.Input("two_interval_mode", default=False, optional=True,
+                                 display_name="2区間モード",
+                                 tooltip="重複時は第1区間を優先します。第1区間が0–1なら"
+                                         "第2区間は動作しません。"),
+                io.Combo.Input("second_block_scope", options=["0-2", "24-26", "30-32"],
+                               default="0-2", optional=True, advanced=True,
+                               display_name="第2区間の効果",
+                               tooltip="2区間モードON時のみ使用します。"),
+                io.Float.Input("second_start_percent", default=0.5, min=0, max=1, step=0.01,
+                               optional=True, advanced=True, display_name="第2区間の開始"),
+                io.Float.Input("second_end_percent", default=1.0, min=0, max=1, step=0.01,
+                               optional=True, advanced=True, display_name="第2区間の終了"),
             ],
             outputs=[io.Model.Output()],
         )
@@ -50,11 +62,16 @@ class MossImageAFM(io.ComfyNode):
                 branch_mode="positive_only", start_percent=0.0, end_percent=1.0,
                 cutoff=0.25, soft_mask=True, mask_width=0.05, preserve_dc=True,
                 head_chunk_size=1, query_chunk_size=128, max_workspace_mib=512.0,
-                fail_mode="raise", logging="summary"):
-        config = AFMConfig(mode, strength, block_scope, branch_mode, start_percent,
-                           end_percent, cutoff, soft_mask, mask_width, preserve_dc,
-                           head_chunk_size, query_chunk_size, max_workspace_mib,
-                           fail_mode, logging)
+                fail_mode="raise", logging="summary", two_interval_mode=False,
+                second_block_scope="0-2", second_start_percent=0.5, second_end_percent=1.0):
+        config = AFMConfig(
+            mode=mode, strength=strength, block_scope=block_scope, branch_mode=branch_mode,
+            start_percent=start_percent, end_percent=end_percent, cutoff=cutoff,
+            soft_mask=soft_mask, mask_width=mask_width, preserve_dc=preserve_dc,
+            head_chunk_size=head_chunk_size, query_chunk_size=query_chunk_size,
+            max_workspace_mib=max_workspace_mib, fail_mode=fail_mode, logging=logging,
+            two_interval_mode=two_interval_mode, second_block_scope=second_block_scope,
+            second_start_percent=second_start_percent, second_end_percent=second_end_percent)
         return io.NodeOutput(install_afm(model, config))
 
 
