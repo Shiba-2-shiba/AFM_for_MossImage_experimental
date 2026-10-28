@@ -1,4 +1,4 @@
-# Implementation status — updated 2026-10-26
+# Implementation status — updated 2026-10-28
 
 ## Current owner-confirmed status
 
@@ -26,6 +26,43 @@ progress-aligned gains, joint all-key softmax, head/query chunking and workspace
 budget checks. Off/zero install no new hooks; observe keeps native dispatch.
 The native output is retained for unselected CFG/text rows and recognized edit
 failures. Run-scoped callbacks and cleanup protect sampler state.
+
+## 2026-10-28 two-interval block selection
+
+- `two_interval_mode=False` preserves the existing single-interval behavior.
+  Enabling it adds a second block scope and start/end window in the same node.
+- The primary interval takes priority over the entire secondary interval at every
+  overlapping progress value, including the shared endpoint. Blocks are patched
+  once over the union of enabled scopes; only the chosen interval is active.
+- The second interval shares strength, CFG selection, frequency controls, memory
+  limits and failure handling. Frequency gains continue to use whole-run progress.
+- New node inputs are optional and appended after existing widgets. Existing
+  API/UI examples are retained. The new `moss_afm_two_intervals_api.json` example
+  switches from `30-32` to `0-2` after progress 0.5.
+- The native ComfyUI prompt validator accepted both a complete legacy-input
+  payload with no new fields and a two-interval payload. Native miniature-model
+  tests verify fused/unfused output equivalence to the selected single interval,
+  gaps, shared scopes, one wrapper per type, and all six selected preset blocks.
+
+Fresh verification in this implementation environment:
+
+- Python 3.10.11, PyTorch 2.10.0+cpu, local workspace ComfyUI checkout.
+  The published Python requirement remains 3.12+; a Python 3.12 runtime was not
+  available for a separate run in this session.
+- With `PYTHONUTF8=1`, `PYTHONDONTWRITEBYTECODE=1` and `MOSS_COMFY_ROOT` pointing
+  to the local ComfyUI checkout, `python -B -m pytest -q -p no:cacheprovider`:
+  **57 passed, 45 subtests passed, no skipped tests**.
+- `python -m compileall -q afm tools tests nodes.py __init__.py`: passed.
+- `git diff --check`: passed. No typecheck command is configured and Ruff is not
+  installed in this environment; no new validation dependencies were added.
+- Log tests verify both interval settings, step/block/action selection, separate
+  run IDs, step reset and cleanup after an exception.
+- Browser UI load/save/reload was not performed. No ComfyUI server was listening
+  on the checked local ports 8188/8189 and Playwright was not installed. Schema
+  ordering and optional-input tests are automated checks, not a browser round-trip.
+- Real-model GPU/image smoke was not run: this Python environment has CPU-only
+  PyTorch and reports no available GPU. Historical GPU evidence below remains
+  separate from this new feature's verification.
 
 ## 2026-10-26 maintenance changes
 

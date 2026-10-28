@@ -217,6 +217,60 @@ class RuntimeTests(unittest.TestCase):
 
 
 class IntervalRuntimeTests(unittest.TestCase):
+    def test_two_interval_run_logs_config_and_resets(self):
+        import json
+        config = AFMConfig(mode="edit", block_scope="0", end_percent=0.5,
+                           two_interval_mode=True, second_block_scope="2")
+        guider = SimpleNamespace(model_options={"transformer_options": {"sentinel": True}})
+        original = guider.model_options
+        beginnings = []
+        flat = [torch.randn(1, 10, 8) for _ in range(3)]
+        baseline = torch.zeros(1, 10, 8)
+
+        def execute(noise, latent, sampler, sigmas, mask, callback, *args):
+            state = guider.model_options["transformer_options"][RUN_KEY]
+            beginnings.append(state.step_index)
+            for step in range(5):
+                for block, ids in ((0, (1,)), (2, (2,))):
+                    context = {"layout": TokenLayout((2, 3), 4), "branches": [0],
+                               "block": block, "interval_ids": ids}
+                    hook = AttentionOverride(config, state, context, None,
+                                             lambda *a, **kw: baseline)
+                    hook.container_function(*flat, 2)
+                callback(step, None, None, 5)
+            return "done"
+
+        def broken(*args):
+            state = guider.model_options["transformer_options"][RUN_KEY]
+            beginnings.append(state.step_index)
+            raise RuntimeError("interrupt run")
+
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper = make_outer_wrapper(config, lambda sampler: None, lambda: directory)
+            for _ in range(2):
+                self.assertEqual(wrapper(FakeExecutor(guider, execute), None, None, object(),
+                                         torch.linspace(1, 0, 6)), "done")
+                self.assertIs(guider.model_options, original)
+            with self.assertRaisesRegex(RuntimeError, "interrupt run"):
+                wrapper(FakeExecutor(guider, broken), None, None, object(), torch.tensor([1, 0]))
+            self.assertIs(guider.model_options, original)
+            runs = [[json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+                    for path in (Path(directory) / "moss_afm").glob("*.jsonl")]
+        self.assertEqual(beginnings, [0, 0, 0])
+        self.assertEqual(len({rows[0]["run_id"] for rows in runs}), 3)
+        successes = [rows for rows in runs if rows[-1]["status"] == "success"]
+        self.assertEqual(len(successes), 2)
+        for rows in successes:
+            settings = rows[0]["config"]
+            self.assertEqual((settings["two_interval_mode"], settings["second_block_scope"],
+                              settings["second_start_percent"], settings["second_end_percent"]),
+                             (True, "2", 0.5, 1.0))
+            summary = rows[-1]
+            self.assertEqual((summary["callbacks"], summary["edited_calls"],
+                              summary["skipped_calls"], summary["fallback_calls"]), (5, 5, 5, 0))
+            self.assertEqual({(c["step"], c["block"]) for c in summary["calls"]
+                              if c["action"] == "edit"}, {(0, 0), (1, 0), (2, 0), (3, 2), (4, 2)})
+
     def hook(self, *, step=3, interval_ids=(2,), **settings):
         config = AFMConfig(mode="edit", strength=0.2, end_percent=0.5,
                            two_interval_mode=True, logging="off", **settings)

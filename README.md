@@ -57,6 +57,38 @@ or replace it with explicit width/height inputs. The AFM node itself adds no run
   Native backend and run-contract errors still propagate.
 - Summary logs are in `output/moss_afm/<run_id>.jsonl`. Detailed QKV are not saved.
 
+## 2区間モード
+
+`two_interval_mode` をONにすると、1つのAFMノードで区間ごとにblockを切り替えられます。
+既存の `block_scope` / `start_percent` / `end_percent` が第1区間、
+advanced設定の `second_block_scope` / `second_start_percent` / `second_end_percent` が第2区間です。
+OFFが既定で、既存ワークフローは従来の1区間として動作します。
+第2区間の入力欄は常設ですが、OFFでは生成に使用しません。
+
+例えば `mode=edit`、`two_interval_mode=True` とし、次のように指定します。
+
+| 区間 | block | 開始 | 終了 |
+|---|---|---:|---:|
+| 第1区間 | `30-32` | `0.0` | `0.5` |
+| 第2区間 | `0-2` | `0.5` | `1.0` |
+
+**重複時は第1区間だけを適用します。** この例の進捗 `0.5` では `30-32` を選び、
+`0.5` を超えてから `0-2` に切り替わります。区間が広く重なった場合も同じ規則で、
+両区間に異なるblockを指定しても同時適用はしません。
+第1区間を既定の `0–1` のままにすると第2区間は動作しないため、終了値も設定してください。
+どちらの区間にも該当しない進捗ではAFMを適用しません。
+
+進捗は実際に実行するステップ列の `step_index / max(total_steps - 1, 1)` です。
+上の例を25ステップで実行すると、最初の13ステップが第1区間、残り12ステップが第2区間です。
+ステップ列に存在しない進捗値へ丸めることはありません。
+`strength`、周波数マスク、CFG分岐、メモリ制限、エラー処理は両区間で共通です。
+低・高周波の倍率は生成全体の進捗から計算し、第2区間でもリセットしません。
+
+API例は [moss_afm_two_intervals_api.json](examples/moss_afm_two_intervals_api.json) です。
+従来と同じモデル・seed・1024×1024・25ステップ・CFG 2.5・ER-SDE/simpleを保持しています。
+モデル名と追加ノードの扱いは上記Installationの説明に従ってください。
+AFMノードを直列につなぐ場合の重複エラーは引き続き有効です。
+
 ## Scope
 
 Native ComfyUI MOSS only; standard Euler and ER-SDE.
@@ -70,6 +102,7 @@ or model combination was independently rechecked here.
 ## Tests and smoke helper
 
 ```powershell
+$env:PYTHONUTF8='1'
 python -m pytest -q
 $env:MOSS_COMFY_ROOT='C:/Users/inott/ComfyUI-Installs/ComfyUI/ComfyUI'
 $env:PYTHONDONTWRITEBYTECODE='1'
