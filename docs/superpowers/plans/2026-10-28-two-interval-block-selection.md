@@ -130,7 +130,7 @@ assert [config.active_interval(p) for p in (0, 0.25, 0.5, 0.75, 1)] == [1, 1, 1,
 - [x] **RED確認：** `python -B -m unittest tests.unit.test_repository_contract tests.unit.test_runtime -v`。未生成の例と不足する挙動を確認する。
 - [x] **例と説明を更新する。** 生成ツールで新例を作り、READMEにON/OFF、重複優先、gap、共有strength、全体進捗、25ステップ時の13/12分割を記載する。既存1区間例の意味を変えない。第1が0–1の場合の第2区間遮蔽も明記する。
 - [x] **全体検証を実行する。** 下記のコマンド・手動確認を行い、実行環境・成功件数・skip・未実行を記録する。
-- [ ] **差分レビューと完了記録を行う。** `docs/implementation-status.md` に今回の実測結果を追記する。周波数処理への差分がないこと、依存追加がないこと、対象外の機能が混入していないことを確認してコミットする。推奨名：`docs: document and verify two-interval AFM scheduling`。
+- [x] **差分レビューと完了記録を行う。** `docs/implementation-status.md` に今回の実測結果を追記する。周波数処理への差分がないこと、依存追加がないこと、対象外の機能が混入していないことを確認してコミットする。推奨名：`docs: document and verify two-interval AFM scheduling`。
 
 ## 検証コマンドと成功条件
 
@@ -184,6 +184,7 @@ CFG・モデル評価回数によりcallsの件数は変わるため、固定の
 - [x] Task 3：末尾へのoptional入力追加、旧・新payloadのComfyUI prompt validation、smoke設定の引き継ぎ。
 - [x] Task 4の例・ログ確認：新API例の生成、設定保持、run間の状態分離、README更新。
 - [x] 全体テスト：57 passed / 45 subtests passed / skipped 0。構文・差分チェック成功。
+- [x] 独立レビュー：指摘0件。レビュー側でも全57テストの成功を確認。
 - [ ] ブラウザUIの保存・再読込：未実行。スキーマ順序・API検証とは区別する。
 - [ ] Python 3.12環境での再実行：未実行。今回の実行環境は3.10.11。
 - [ ] 実モデルGPU smoke：未実行。今回のPyTorchはCPU版。

@@ -1,4 +1,46 @@
-# Maintenance review — 2026-10-26
+# Maintenance and feature review
+
+## 2026-10-28 two-interval implementation
+
+Independent read-only whole-branch review covered all 15 changed files from
+`f47831f` through `ce9fb74`, plus supporting runtime and attention code.
+Result: **approved, zero Critical / Important / Minor findings**.
+The reviewer independently reran the native-enabled suite:
+**57 passed, 45 subtests passed, no skipped tests**.
+All 10 changed Python files parsed, and the diff whitespace check passed.
+
+The review confirms primary-window precedence before block membership, one
+replacement per block over the enabled union, global frequency progress,
+appended optional inputs, complete legacy-payload validation, and native
+fused/unfused equivalence. No separate architecture change is required: the
+existing single sampler wrapper, diffusion wrapper and RunState are retained.
+
+The following review boundaries remain explicit:
+
+- Browser UI save/reload: not executed; schema ordering and real API validation
+  passed. This is a validation gap, not a claim of a completed browser round-trip.
+- Real-model GPU output and image quality: not executed in CPU-only PyTorch;
+  no image-quality improvement is claimed for the new switch.
+- Python 3.12-specific runtime behavior: not rerun; the available environment
+  was Python 3.10.11. The published Python 3.12+ requirement is retained.
+- Production performance and VRAM: not profiled; no speed or memory benefit
+  is claimed for union-of-scopes registration.
+- Compile, multi-GPU, skip-cache, other patches and Slider: remain outside the
+  qualified integrations, as before this feature.
+- Historical sparse API examples: their omitted required advanced inputs are
+  a pre-existing limitation, not a new optional-input regression. Existing
+  examples were retained, and the new two-interval API example includes all
+  required AFM inputs. Legacy API validation uses complete old settings with
+  the new optional fields absent.
+
+Execution decisions: work stayed in the user-named checkout on feature branch
+`feat/two-interval-block-selection`; a plan-scoped PowerShell ledger recorded
+task evidence; UTF-8 mode resolves pre-existing locale-default test reads.
+The planned GPU command now explicitly supplies 1024×1024 / 25 steps because
+the smoke helper itself defaults to 512×512 / 3 steps. These decisions do not
+alter the requested AFM frequency behavior.
+
+## Maintenance review — 2026-10-26
 
 Scope: alignment with owner-selected three-layer presets, current examples and
 documentation, smoke verification contracts, and bounded allocation optimizations.
