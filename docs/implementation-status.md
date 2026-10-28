@@ -1,4 +1,23 @@
-# Implementation status — updated 2026-10-28
+# Implementation status — updated 2026-10-29
+
+## 2026-10-29 Residual block scaling
+
+- Added `MossImageResidual`: independent 9-25 / 34-41 multipliers, default 1.0,
+  using native attention/MLP residual gates without changing checkpoint files.
+- Native LoRA patches survive cloning; Residual composes with AFM, including
+  overlapping blocks 24/25, CFG selection, intervals, no-op modes and fallback.
+- Native full suite: **79 tests passed, no skips**. Independent review findings
+  were addressed with regression tests. No extra runtime dependencies.
+- INT8 MOSS on AMD Radeon AI PRO R9700: **33 successful sampling runs**, including
+  512px no-op equality, 1024px/25-step edit, both AFM intervals and two actual LoRAs.
+  All outputs finite; enabled AFM runs had zero fallback.
+- New API examples pass native prompt validation for their patch chain and live
+  preflight for installed filenames. The owner confirmed successful operation.
+- Agent-driven UI save/reload was unavailable through the connected UI tooling.
+  This is separate from the owner's confirmed operation; no UI round-trip is inferred.
+
+See [Residual verification record](residual-validation.md) for commands, models,
+review fixes, local evidence locations and limits.
 
 ## Current owner-confirmed status
 

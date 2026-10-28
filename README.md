@@ -94,10 +94,56 @@ AFMノードを直列につなぐ場合の重複エラーは引き続き有効�
 Native ComfyUI MOSS only; standard Euler and ER-SDE.
 Fused/unfused QKV, rectangular image grids, CFG batching and separate text lengths
 are covered by the existing test plan. HF plugin loaders, torch.compile, multi-GPU,
-skip-cache, other block/attention patches and Slider interoperability are not qualified.
+skip-cache and other block/attention patches are not qualified, except for the
+MOSS Image Residual node described below. Native LoRA model patches are preserved.
 The owner's real-device operation is established; an additional deployment gate is
 not required by this update. This does not imply every possible API/UI round-trip
 or model combination was independently rechecked here.
+
+## Residualブロック倍率
+
+**MOSS Image Residual**を、ネイティブのモデル／LoRA読込ノードとAFMの間へ接続できます。
+追加後はComfyUIを再起動してノードを読み込んでください。
+
+```text
+Load Diffusion Model → Load LoRA（複数可）→ MOSS Image Residual → MOSS Image AFM → KSampler
+```
+
+LoRAなし、Residual単独でも使用できます。`LoraLoaderModelOnly`と`LoraLoader`のMODEL出力に対応します。
+`LoraLoader`のCLIP出力は、通常どおりテキストエンコードへ接続します。
+
+| 入力 | 対象 | 既定値 | 範囲 |
+|---|---|---:|---|
+| `mid_multiplier`（9-25の倍率） | joint block 9～25 | 1.0 | 0～2 |
+| `late_multiplier`（34-41の倍率） | joint block 34～41 | 1.0 | 0～2 |
+
+番号は0始まり・両端を含みます。1.0は変更なし、0は対象blockの残差更新を0にします。
+有限の0～2を指定してください。APIの数値文字列・boolはComfyUI本体のFLOAT変換に従い、変換後の値を検証します。
+それ以外のblock、QKVパラメータ、出力headを直接変更しません。
+倍率は対象blockのAttention出力とMLP出力にそれぞれ作用し、**LoRA適用後の結果全体**を調整します。
+画像・テキストの両トークン、CFGの両分岐、全ステップが対象です。
+AFMのCFG選択・時間区間とは独立し、AFMがoff/observe/区間外でもResidualは有効です。
+
+モデルファイルの保存・再量子化は不要です。cloneへ設定を持たせるため、元MODELから分岐した別経路へ
+倍率が漏れません。両倍率1.0では追加パッチなしのcloneを返します。
+AFMの`24-26`では24・25に両処理が作用し、各blockのnative計算は1回です。
+AFMの`fallback_original`もLoRA＋Residualを維持します。
+
+通常の42層native MOSSのT2I向けです。効果を持つResidualの二重追加、AFM→Residualの逆順、
+未知のblock/attention patchとの併用はエラーです。参照画像付きモデル、compile、cache、multi-GPUは未対応です。
+保存済みの調整モデルとは丸め位置が違うため、INT8を含めbitwise一致を保証しません。
+
+使用例：[Residual＋AFM](examples/moss_residual_afm_api.json)、
+[ネイティブLoRA＋Residual＋AFM](examples/moss_lora_residual_afm_api.json)。
+0.75/1.15は参照設定の例で、推奨画質を保証する値ではありません。
+LoRA例の`MoodyMoss\\hatsunemiku_slider.safetensors`は検証環境で存在を確認した名前です。
+別環境では互換性のあるインストール済みモデル・LoRAへ置き換えてください。
+
+smoke helperもこのMODEL経路を実行します。baselineはLoRA＋Residualを保持し、AFMだけを外して比較します。
+helperのLoRA対応は`LoraLoaderModelOnly`に限定します。CLIPも変更する`LoraLoader`を渡すと明示エラーとし、
+その経路は通常のComfyUI API/UIで検証してください。必要なら`--extra-model-paths-config`で既存のモデル検索設定を渡せます。
+例の生成時は`--model-lora NAME STRENGTH`を繰り返して複数LoRAを指定できます。
+smokeでは未適用のLoRAキーがあれば失敗とし、ファイルごとの適用キーをreportへ記録します。
 
 ## Tests and smoke helper
 

@@ -9,6 +9,7 @@ import torch
 
 from . import __version__
 from .config import TokenLayout
+from .residual import RESIDUAL_CONFIG_KEY
 
 RUN_KEY = "moss_afm_run"
 CONTEXT_KEY = "moss_afm_context"
@@ -92,11 +93,13 @@ def make_outer_wrapper(config, validate_sampler, output_directory):
 
         status, error_type = "error", None
         try:
+            residual = options["transformer_options"].get(RESIDUAL_CONFIG_KEY)
+            metadata = {} if residual is None else {"residual_config": asdict(residual)}
             state.record("run_start", config=asdict(config), total_steps=state.total_steps,
                          implementation_version=__version__,
                          torch_version=torch.__version__,
                          hip_version=getattr(torch.version, "hip", None),
-                         sigmas=sigmas.detach().cpu().tolist(), seed=seed)
+                         sigmas=sigmas.detach().cpu().tolist(), seed=seed, **metadata)
             result = executor(noise, latent_image, sampler, sigmas, denoise_mask,
                               step_done, disable_pbar, seed, latent_shapes)
             if state.callbacks != state.total_steps:

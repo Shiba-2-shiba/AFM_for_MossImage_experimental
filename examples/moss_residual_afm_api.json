@@ -1,0 +1,184 @@
+{
+  "9": {
+    "inputs": {
+      "filename_prefix": "moss_afm/moss_residual_afm",
+      "images": [
+        "37",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "画像を保存"
+    }
+  },
+  "19": {
+    "inputs": {
+      "aspect_ratio": "1:1 (Square)",
+      "megapixels": 1,
+      "multiple": 16
+    },
+    "class_type": "ResolutionSelector",
+    "_meta": {
+      "title": "解像度セレクター"
+    }
+  },
+  "28": {
+    "inputs": {
+      "unet_name": "moodyMossMixFreeDownload_v2025STEPSCFG3_int8.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "拡散モデルを読み込む"
+    }
+  },
+  "29": {
+    "inputs": {
+      "text": " A realistic color photograph depicts one fully clothed adult woman styled as a real-world\n    interpretation of Hatsune Miku from Vocaloid, with very long teal hair in high twin-tails,\n    straight bangs, teal eyes, and a softly tapered face with a small nose and mouth. She wears a\n    plain blue denim jacket over a white T-shirt, black trousers, and gray sneakers. A full-body\n    front view shows her entire standing figure from the top of her hair to both shoes and the\n    floor. She has a calm, neutral expression and relaxed arms at her sides. She wears no\n    headphones, headset microphone, decorative hair ornaments, or jewelry. Her clothing and\n    visible skin have no lettering or emblems. A softly blurred beige room forms the background.\n    Broad window light creates gentle shadows on her face, hair, and clothing. Natural skin\n    texture, individual hair strands, and photographic lighting give her a lifelike appearance.",
+      "clip": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "30": {
+    "inputs": {
+      "clip_name": "qwen3.5_9b_int8_convrot.safetensors",
+      "type": "moss_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "CLIPを読み込む"
+    }
+  },
+  "31": {
+    "inputs": {
+      "seed": 333599710072681,
+      "steps": 25,
+      "cfg": 2.5,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "39",
+        0
+      ],
+      "positive": [
+        "29",
+        0
+      ],
+      "negative": [
+        "36",
+        0
+      ],
+      "latent_image": [
+        "35",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Kサンプラー"
+    }
+  },
+  "32": {
+    "inputs": {
+      "vae_name": "flux2-vae_small.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAEを読み込む"
+    }
+  },
+  "35": {
+    "inputs": {
+      "width": [
+        "19",
+        0
+      ],
+      "height": [
+        "19",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "36": {
+    "inputs": {
+      "text": "nsfw, worst quality, bad anatomy, watermark, jpeg artifact",
+      "clip": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt (empty = reference default)"
+    }
+  },
+  "37": {
+    "inputs": {
+      "samples": [
+        "31",
+        0
+      ],
+      "vae": [
+        "32",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAEデコード"
+    }
+  },
+  "38": {
+    "class_type": "MossImageResidual",
+    "inputs": {
+      "model": [
+        "28",
+        0
+      ],
+      "mid_multiplier": 0.75,
+      "late_multiplier": 1.15
+    }
+  },
+  "39": {
+    "class_type": "MossImageAFM",
+    "inputs": {
+      "model": [
+        "38",
+        0
+      ],
+      "mode": "edit",
+      "strength": 0.05,
+      "block_scope": "24-26",
+      "branch_mode": "positive_only",
+      "start_percent": 0.0,
+      "end_percent": 1.0,
+      "cutoff": 0.25,
+      "soft_mask": true,
+      "mask_width": 0.05,
+      "preserve_dc": true,
+      "head_chunk_size": 1,
+      "query_chunk_size": 128,
+      "max_workspace_mib": 512.0,
+      "fail_mode": "raise",
+      "logging": "summary",
+      "two_interval_mode": false,
+      "second_block_scope": "0-2",
+      "second_start_percent": 0.5,
+      "second_end_percent": 1.0
+    }
+  }
+}

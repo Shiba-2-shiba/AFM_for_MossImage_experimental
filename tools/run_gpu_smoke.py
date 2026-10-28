@@ -11,6 +11,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--comfy-root", required=True)
 parser.add_argument("--workflow", required=True)
 parser.add_argument("--model-root", default="D:/StabilityMatrix-win-x64/Data/Models")
+parser.add_argument("--extra-model-paths-config", action="append", default=[])
 parser.add_argument("--output", required=True)
 parser.add_argument("--width", type=int, default=512)
 parser.add_argument("--height", type=int, default=512)
@@ -37,15 +38,23 @@ import comfy.model_management
 import folder_paths
 import nodes
 
-from afm.adapter import install_afm
 from tools.smoke_contract import (compare_latents, mode_config, parse_modes,
-                                  workflow_config)
+                                  workflow_pipeline, prepare_model_pipeline, model_for_mode,
+                                  load_lora_checked, load_model_only_lora)
+
+from utils.extra_config import load_extra_path_config
+default_paths = Path(options.comfy_root) / "extra_model_paths.yaml"
+if default_paths.is_file():
+    load_extra_path_config(str(default_paths))
+for path in options.extra_model_paths_config:
+    load_extra_path_config(path)
 
 folder_paths.set_output_directory(str(out))
 workflow_path = Path(options.workflow)
 workflow = json.loads(workflow_path.read_text(encoding="utf-8-sig"))
 inputs = workflow["31"]["inputs"]
-base_config = workflow_config(workflow)
+pipeline = workflow_pipeline(workflow)
+base_config = pipeline.afm
 modes = parse_modes(options.modes)
 if base_config.logging == "off":
     raise ValueError("Smoke verification requires logging=summary")
@@ -63,10 +72,22 @@ report = {"source_sha256": source_hashes, "status": "running", "workflow_sha256"
           "sampler": inputs["sampler_name"], "scheduler": inputs["scheduler"],
           "torch_version": torch.__version__, "hip": torch.version.hip, "runs": [],
           "afm_config": asdict(base_config),
+          "model_pipeline": asdict(pipeline), "lora_files": [],
           "scope": "Separate native ComfyUI process, not active server node registration"}
 
 def save_report():
     (out / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+
+def load_model_lora(model, spec):
+    path = Path(folder_paths.get_full_path_or_raise("loras", spec.lora_name))
+    loaded, evidence = load_lora_checked(model, spec, load_model_only_lora)
+    stat = path.stat()
+    report["lora_files"].append({"name": spec.lora_name, "path": str(path),
+                                 "strength_model": spec.strength_model,
+                                 "size_bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns,
+                                 **evidence})
+    return loaded
 
 save_report()
 try:
@@ -77,13 +98,14 @@ try:
         negative = clip.encode_from_tokens_scheduled(clip.tokenize(workflow["36"]["inputs"]["text"]))
         print("Loading diffusion model", flush=True)
         model = comfy.sd.load_diffusion_model(str(model_path))
+        model = prepare_model_pipeline(model, pipeline, load_model_lora)
         print("Loading VAE", flush=True)
         vae = comfy.sd.VAE(sd=comfy.utils.load_torch_file(str(vae_path)))
         baseline = None
         for mode in modes:
             print("RUN " + mode, flush=True)
             config = mode_config(base_config, mode)
-            patched = model if mode == "baseline" else install_afm(model, config)
+            patched = model_for_mode(model, base_config, mode)
             latent = {"samples": torch.zeros(options.batch, 128, options.height // 16,
                                              options.width // 16)}
             before_logs = set((out / "moss_afm").glob("*.jsonl"))

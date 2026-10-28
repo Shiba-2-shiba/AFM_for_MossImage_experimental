@@ -2,6 +2,7 @@ from comfy_api.latest import ComfyExtension, io
 
 from .afm.adapter import install_afm
 from .afm.config import AFMConfig
+from .afm.residual import ResidualConfig, install_residual
 
 
 class MossImageAFM(io.ComfyNode):
@@ -75,6 +76,42 @@ class MossImageAFM(io.ComfyNode):
         return io.NodeOutput(install_afm(model, config))
 
 
+class MossImageResidual(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="MossImageResidual", display_name="MOSS Image Residual",
+            category="model/patches/moss_image",
+            description=("Native MOSSのブロック9-25と34-41のAttention/MLP残差を倍率調整。"
+                         "LoRA適用後、MOSS Image AFMの前へ接続します。"),
+            inputs=[
+                io.Model.Input("model"),
+                io.Float.Input("mid_multiplier", default=1.0, min=0, max=2, step=0.01,
+                               display_name="9-25の倍率",
+                               tooltip="0始まり・両端を含む。1.0で変更なし。LoRAを含むAttention＋MLP出力を、両CFG・全期間で調整。"),
+                io.Float.Input("late_multiplier", default=1.0, min=0, max=2, step=0.01,
+                               display_name="34-41の倍率",
+                               tooltip="0始まり・両端を含む。1.0で変更なし。LoRAを含むAttention＋MLP出力を、両CFG・全期間で調整。"),
+            ],
+            outputs=[io.Model.Output()],
+        )
+
+    @classmethod
+    def validate_inputs(cls, mid_multiplier=None, late_multiplier=None):
+        # Linked inputs are unavailable during prompt validation; execute validates them.
+        # Literal FLOAT inputs have already been normalized by ComfyUI.
+        try:
+            ResidualConfig(1.0 if mid_multiplier is None else mid_multiplier,
+                           1.0 if late_multiplier is None else late_multiplier)
+        except ValueError as exc:
+            return str(exc)
+        return True
+
+    @classmethod
+    def execute(cls, model, mid_multiplier=1.0, late_multiplier=1.0):
+        return io.NodeOutput(install_residual(model, ResidualConfig(mid_multiplier, late_multiplier)))
+
+
 class MossAFMExtension(ComfyExtension):
     async def get_node_list(self):
-        return [MossImageAFM]
+        return [MossImageAFM, MossImageResidual]

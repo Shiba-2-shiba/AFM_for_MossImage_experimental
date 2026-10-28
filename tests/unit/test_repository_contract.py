@@ -13,6 +13,31 @@ PRESETS = ["0-2", "24-26", "30-32"]
 
 
 class RepositoryContractTests(unittest.TestCase):
+    def test_residual_example_preserves_sampling_and_lora_order(self):
+        source = ROOT / 'examples/moss_afm_baseline_api.json'
+        original = json.loads(source.read_text(encoding='utf-8'))
+        with tempfile.TemporaryDirectory() as directory:
+            subprocess.run([sys.executable, str(ROOT / 'tools/build_examples.py'),
+                            '--workflow', str(source), '--output', directory,
+                            '--model-lora', 'first.safetensors', '0.6',
+                            '--model-lora', 'second.safetensors', '-0.2'], check=True)
+            simple = json.loads((Path(directory) / 'moss_residual_afm_api.json').read_text(encoding='utf-8'))
+            combined = json.loads((Path(directory) / 'moss_lora_residual_afm_api.json').read_text(encoding='utf-8'))
+            legacy = json.loads((Path(directory) / 'moss_afm_edit_api.json').read_text(encoding='utf-8'))
+        from tools.smoke_contract import workflow_pipeline
+        self.assertEqual(legacy['38']['inputs']['model'], ['28', 0])
+        self.assertEqual(workflow_pipeline(simple).loras, ())
+        pipeline = workflow_pipeline(combined)
+        self.assertEqual([s.lora_name for s in pipeline.loras], ['first.safetensors', 'second.safetensors'])
+        self.assertEqual(pipeline.afm.block_scope, '24-26')
+        self.assertEqual((pipeline.residual.mid_multiplier, pipeline.residual.late_multiplier), (0.75, 1.15))
+        for workflow in (simple, combined):
+            for key in ('28', '29', '30', '32', '35', '36'):
+                self.assertEqual(workflow[key], original[key])
+            for key, value in original['31']['inputs'].items():
+                if key != 'model':
+                    self.assertEqual(workflow['31']['inputs'][key], value)
+
     def test_two_interval_example_preserves_sampling_inputs(self):
         source = ROOT / "examples/moss_afm_baseline_api.json"
         original = json.loads(source.read_text(encoding="utf-8"))
@@ -37,6 +62,7 @@ class RepositoryContractTests(unittest.TestCase):
 
     def test_new_inputs_are_optional_and_appended(self):
         tree = ast.parse((ROOT / "nodes.py").read_text(encoding="utf-8"))
+        tree = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "MossImageAFM")
         schema = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
                       and n.name == "define_schema")
         inputs = next(k.value for n in ast.walk(schema) if isinstance(n, ast.Call)
@@ -64,6 +90,7 @@ class RepositoryContractTests(unittest.TestCase):
     def test_core_and_node_defaults_match_validated_presets(self):
         self.assertEqual(AFMConfig().block_scope, "0-2")
         tree = ast.parse((ROOT / "nodes.py").read_text())
+        tree = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "MossImageAFM")
         execute = next(n for n in ast.walk(tree)
                        if isinstance(n, ast.FunctionDef) and n.name == "execute")
         defaults = dict(zip([a.arg for a in execute.args.args][-len(execute.args.defaults):],

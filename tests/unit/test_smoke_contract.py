@@ -45,7 +45,8 @@ class SmokeContractTests(unittest.TestCase):
             self.fail("Missing import-safe smoke configuration/result contract")
 
     def workflow(self, **settings):
-        return {"31": {"inputs": {"model": ["38", 0]}},
+        return {"28": {"class_type": "UNETLoader", "inputs": {"unet_name": "test.safetensors"}},
+                "31": {"inputs": {"model": ["38", 0]}},
                 "38": {"class_type": "MossImageAFM", "inputs":
                        {"model": ["28", 0], "mode": "observe", **settings}}}
 
@@ -65,7 +66,9 @@ class SmokeContractTests(unittest.TestCase):
 
     def test_default_and_invalid_workflow_settings(self):
         h = self.helpers()
-        self.assertEqual(h.workflow_config({"31": {"inputs": {"model": ["28", 0]}}}), AFMConfig())
+        baseline = self.workflow()
+        baseline['31']['inputs']['model'] = ['28', 0]
+        self.assertEqual(h.workflow_config(baseline), AFMConfig())
         for settings in ({"block_scope": "0"}, {"block_scope": "all"},
                          {"unknown": 1}, {"strength": ["99", 0]}):
             with self.assertRaises(ValueError):
@@ -105,3 +108,51 @@ class SmokeContractTests(unittest.TestCase):
             self.fail("Smoke comparison cannot yet assert a configured bypass")
         else:
             self.fail("Edit-strength-zero regression was silently accepted")
+
+    def pipeline_workflow(self):
+        workflow = self.workflow(mode='edit', block_scope='24-26')
+        workflow['38']['inputs']['model'] = ['residual', 0]
+        workflow['residual'] = {'class_type': 'MossImageResidual', 'inputs': {
+            'model': ['lora2', 0], 'mid_multiplier': 0.75, 'late_multiplier': 1.15}}
+        workflow['lora2'] = {'class_type': 'LoraLoaderModelOnly', 'inputs': {
+            'model': ['lora1', 0], 'lora_name': 'second.safetensors', 'strength_model': -0.2}}
+        workflow['lora1'] = {'class_type': 'LoraLoaderModelOnly', 'inputs': {
+            'model': ['28', 0], 'lora_name': 'first.safetensors', 'strength_model': 0.6}}
+        return workflow
+
+    def test_model_pipeline_preserves_lora_order(self):
+        h = self.helpers()
+        pipeline = h.workflow_pipeline(self.pipeline_workflow())
+        self.assertEqual([(s.lora_name, s.strength_model) for s in pipeline.loras],
+                         [('first.safetensors', 0.6), ('second.safetensors', -0.2)])
+        self.assertEqual((pipeline.residual.mid_multiplier, pipeline.residual.late_multiplier),
+                         (0.75, 1.15))
+        self.assertEqual(pipeline.afm.block_scope, '24-26')
+        self.assertEqual(h.workflow_config(self.pipeline_workflow()), pipeline.afm)
+
+    def test_pipeline_rejects_unsupported_links(self):
+        import copy
+        h = self.helpers()
+        original = self.pipeline_workflow()
+        invalid = []
+        for link in (['38', 0], ['missing', 0], ['28', 1], ['28', False], '28'):
+            workflow = copy.deepcopy(original)
+            workflow['lora1']['inputs']['model'] = link
+            invalid.append(workflow)
+        for kind in ('LoraLoader', 'UnknownNode', 'MossImageAFM', 'MossImageResidual'):
+            workflow = copy.deepcopy(original)
+            workflow['lora1']['class_type'] = kind
+            invalid.append(workflow)
+        for value in (float('nan'), True, ['value', 0]):
+            workflow = copy.deepcopy(original)
+            workflow['lora1']['inputs']['strength_model'] = value
+            invalid.append(workflow)
+        workflow = copy.deepcopy(original)
+        del workflow['28']
+        invalid.append(workflow)
+        workflow = copy.deepcopy(original)
+        workflow['residual']['inputs']['unknown'] = 1
+        invalid.append(workflow)
+        for workflow in invalid:
+            with self.subTest(workflow=workflow), self.assertRaises(ValueError):
+                h.workflow_pipeline(workflow)

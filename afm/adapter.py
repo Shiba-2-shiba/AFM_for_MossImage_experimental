@@ -6,6 +6,7 @@ import torch
 from .attention import edit_image_rows, write_image_rows
 from .config import parse_block_scope
 from .memory import MemoryGuardError, plan_chunks
+from .residual import RESIDUAL_CONFIG_KEY, ResidualBlockPatch, ResidualConfig
 from .runtime import (CONFIG_KEY, CONTEXT_KEY, RUN_KEY, RunState, branch_rows,
                       make_diffusion_wrapper, make_outer_wrapper)
 
@@ -151,8 +152,20 @@ def install_afm(model, config):
     options = model.model_options.get("transformer_options", {})
     if CONFIG_KEY in options or "optimized_attention_override" in options:
         raise ValueError("Conflicting or duplicate AFM attention patch")
-    if options.get("patches_replace", {}).get("dit"):
-        raise ValueError("Existing DiT block replacement conflicts with MOSS AFM")
+    existing_blocks = options.get("patches_replace", {}).get("dit", {})
+    if existing_blocks or RESIDUAL_CONFIG_KEY in options:
+        residual_config = options.get(RESIDUAL_CONFIG_KEY)
+        if (type(residual_config) is not ResidualConfig or residual_config.bypass
+                or caps.blocks != 42):
+            raise ValueError("Existing DiT block replacement conflicts with MOSS AFM")
+        expected = {("single_block", i): residual_config.multiplier_for(i)
+                    for i in range(caps.blocks) if residual_config.multiplier_for(i) != 1}
+        if set(existing_blocks) != set(expected) or any(
+                type(existing_blocks[key]) is not ResidualBlockPatch
+                or existing_blocks[key].block_index != key[1]
+                or existing_blocks[key].multiplier != factor
+                for key, factor in expected.items()):
+            raise ValueError("MOSS Residual patches do not match their configuration")
     if (model.get_all_wrappers(WrappersMP.DIFFUSION_MODEL)
             or get_all_wrappers(WrappersMP.DIFFUSION_MODEL, options)):
         raise ValueError("Existing diffusion wrapper requires separate AFM qualification")
@@ -170,6 +183,7 @@ def install_afm(model, config):
 
     def replacement_for(index):
         preferred = native.layers[index].comfy_attention
+        residual_patch = existing_blocks.get(("single_block", index))
         interval_ids = tuple(n for n, scope in ((1, first_scope), (2, second_scope))
                              if index in scope)
 
@@ -183,6 +197,8 @@ def install_afm(model, config):
             opts["optimized_attention_override"] = AttentionOverride(
                 config, state, context, preferred, optimized_attention)
             local["transformer_options"] = opts
+            if residual_patch is not None:
+                return residual_patch(local, extra)
             return extra["original_block"](local)
         return replacement
 

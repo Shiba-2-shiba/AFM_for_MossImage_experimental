@@ -27,6 +27,39 @@ class Container:
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_residual_afm_repeated_runs_cleanup(self):
+        import json
+        from afm.residual import ResidualConfig, RESIDUAL_CONFIG_KEY
+        residual = ResidualConfig(0.75, 1.15)
+        original = {'transformer_options': {RESIDUAL_CONFIG_KEY: residual}}
+        guider = SimpleNamespace(model_options=original)
+        states = []
+        def execute(*args):
+            state = guider.model_options['transformer_options'][RUN_KEY]
+            states.append(state)
+            self.assertEqual(state.step_index, 0)
+            self.assertIs(guider.model_options['transformer_options'][RESIDUAL_CONFIG_KEY], residual)
+            if len(states) == 1:
+                raise RuntimeError('injected')
+            args[5](0, None, None, 1)
+            return 'done'
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper = make_outer_wrapper(AFMConfig(), lambda s: None, lambda: directory)
+            with self.assertRaisesRegex(RuntimeError, 'injected'):
+                wrapper(FakeExecutor(guider, execute), None, None, None, torch.tensor([1., 0.]))
+            self.assertIs(guider.model_options, original)
+            self.assertEqual(wrapper(FakeExecutor(guider, execute), None, None, None,
+                                     torch.tensor([1., 0.])), 'done')
+            self.assertIs(guider.model_options, original)
+            logs = list((Path(directory) / 'moss_afm').glob('*.jsonl'))
+            self.assertEqual(len(logs), 2)
+            for log in logs:
+                first = json.loads(log.read_text().splitlines()[0])
+                self.assertEqual(first['residual_config'],
+                                 {'mid_multiplier': 0.75, 'late_multiplier': 1.15})
+        self.assertNotEqual(states[0].run_id, states[1].run_id)
+        self.assertTrue(all(s.finished for s in states))
+
     def test_multiple_rows_clone_once_and_failure_keeps_native_baseline(self):
         from unittest.mock import patch
         from afm.attention import edit_image_rows

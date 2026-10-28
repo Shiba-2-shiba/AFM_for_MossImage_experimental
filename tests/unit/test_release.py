@@ -19,7 +19,10 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(paths[0].read_bytes(), paths[1].read_bytes())
             with zipfile.ZipFile(paths[0]) as archive:
                 for name in ("nodes.py", "afm/config.py", "tools/smoke_contract.py",
+                             "afm/residual.py", "examples/moss_residual_afm_api.json",
+                             "examples/moss_lora_residual_afm_api.json",
                              "examples/moss_afm_edit_api.json", "README.md"):
                     self.assertEqual(archive.read(name), (ROOT / name).read_bytes())
-                self.assertFalse(any("__pycache__" in n or n.startswith((".git/", "dist/", "test-results/"))
+                self.assertFalse(any("__pycache__" in n or n.endswith('.safetensors')
+                                     or n.startswith((".git/", "dist/", "test-results/", "参考/"))
                                      for n in archive.namelist()))
