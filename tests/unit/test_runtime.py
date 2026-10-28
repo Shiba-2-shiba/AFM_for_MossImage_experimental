@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 
@@ -44,7 +45,8 @@ class RuntimeTests(unittest.TestCase):
         for fail in (False, True):
             state = RunState(2, config)
             hook = AttentionOverride(config, state,
-                    {"layout": TokenLayout((2, 3), 4), "branches": [0], "block": 0},
+                    {"layout": TokenLayout((2, 3), 4), "branches": [0], "block": 0,
+                     "interval_ids": (1,)},
                     None, lambda *a, **kw: baseline)
             calls = []
 
@@ -91,7 +93,8 @@ class RuntimeTests(unittest.TestCase):
             calls.append(tuple(c.take().shape for c in (q, k, v)))
             return expected
 
-        context = {"layout": TokenLayout((2, 3), 4), "branches": [0, 1], "block": 0}
+        context = {"layout": TokenLayout((2, 3), 4), "branches": [0, 1], "block": 0,
+                   "interval_ids": (1,)}
         hook = AttentionOverride(AFMConfig(mode="observe", logging="off"),
                                  state, context, preferred, dispatcher)
         output = hook.container_function(*containers, 3,
@@ -106,7 +109,8 @@ class RuntimeTests(unittest.TestCase):
         from unittest.mock import patch
         config = AFMConfig(mode="edit", fail_mode="fallback_original", logging="off")
         state = RunState(2, config)
-        context = {"layout": TokenLayout((2, 3), 4), "branches": [0], "block": 0}
+        context = {"layout": TokenLayout((2, 3), 4), "branches": [0], "block": 0,
+                   "interval_ids": (1,)}
         expected = torch.randn(1, 10, 12)
         calls = []
 
@@ -183,7 +187,8 @@ class RuntimeTests(unittest.TestCase):
                 c.take()
             return expected
         hook = AttentionOverride(config, state,
-                {"layout": TokenLayout((2, 3), 4), "branches": [0, 1], "block": 0},
+                {"layout": TokenLayout((2, 3), 4), "branches": [0, 1], "block": 0,
+                 "interval_ids": (1,)},
                 None, dispatch)
         got = hook.container_function(*[Container(x) for x in flat], 3)
         self.assertTrue(torch.equal(got[1], expected[1]))
@@ -209,6 +214,83 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(records[0]["grid"], [3, 5])
         self.assertEqual(records[0]["text_tokens"], 4)
         self.assertEqual(records[0]["branches"], [0])
+
+
+class IntervalRuntimeTests(unittest.TestCase):
+    def hook(self, *, step=3, interval_ids=(2,), **settings):
+        config = AFMConfig(mode="edit", strength=0.2, end_percent=0.5,
+                           two_interval_mode=True, logging="off", **settings)
+        state = RunState(5, config, step_index=step)
+        generator = torch.Generator().manual_seed(37)
+        flat = [torch.randn(2, 10, 8, generator=generator) for _ in range(3)]
+        q, k, v = [x.reshape(2, 10, 2, 4).transpose(1, 2) for x in flat]
+        baseline = ((q @ k.transpose(-2, -1) * 0.5).softmax(-1) @ v)
+        baseline = baseline.transpose(1, 2).reshape(2, 10, 8)
+        context = {"layout": TokenLayout((2, 3), 4), "branches": [0, 1],
+                   "block": 0, "interval_ids": interval_ids}
+        hook = AttentionOverride(config, state, context, None, lambda *a, **kw: baseline)
+        return hook, state, baseline, flat
+
+    def test_second_interval_uses_global_progress(self):
+        from afm.attention import edit_image_rows
+        hook, state, baseline, flat = self.hook()
+        with patch("afm.adapter.edit_image_rows", wraps=edit_image_rows) as kernel:
+            got = hook.container_function(*flat, 2)
+        self.assertEqual(state.edited_calls, 1)
+        self.assertEqual(kernel.call_args.args[5], 0.75)
+        self.assertFalse(torch.equal(got[0, :6], baseline[0, :6]))
+
+    def test_overlap_suppresses_secondary_blocks(self):
+        for mode in ("edit", "observe"):
+            for interval_ids, expected in (((1,), "active"), ((2,), "skipped")):
+                with self.subTest(mode=mode, interval_ids=interval_ids):
+                    hook, state, baseline, flat = self.hook(step=2, interval_ids=interval_ids)
+                    from dataclasses import replace
+                    hook.config = replace(hook.config, mode=mode,
+                                          second_start_percent=0.25)
+                    got = hook.container_function(*flat, 2)
+                    if expected == "skipped":
+                        self.assertIs(got, baseline)
+                        self.assertEqual((state.edited_calls, state.observed_calls,
+                                          state.skipped_calls), (0, 0, 1))
+                    elif mode == "edit":
+                        self.assertEqual(state.edited_calls, 1)
+                    else:
+                        self.assertEqual(state.observed_calls, 1)
+
+    def test_shared_blocks_edit_once_per_call(self):
+        from afm.attention import edit_image_rows
+        for step in (2, 3):
+            hook, state, _, flat = self.hook(step=step, interval_ids=(1, 2))
+            with patch("afm.adapter.edit_image_rows", wraps=edit_image_rows) as kernel:
+                hook.container_function(*flat, 2)
+            self.assertEqual(kernel.call_count, 1)
+            self.assertEqual(state.edited_calls, 1)
+
+    def test_gap_dispatches_native(self):
+        hook, state, baseline, flat = self.hook(step=3, second_start_percent=0.9)
+        with patch("afm.adapter.edit_image_rows", side_effect=AssertionError("gap edited")):
+            self.assertIs(hook.container_function(*flat, 2), baseline)
+        self.assertEqual(state.skipped_calls, 1)
+
+    def test_multiple_evaluations_keep_interval(self):
+        hook, state, _, flat = self.hook()
+        for _ in range(2):
+            hook.container_function(*flat, 2)
+        self.assertEqual(state.step_index, 3)
+        self.assertEqual(state.edited_calls, 2)
+        self.assertEqual(state.calls[(3, 0, 0, "edit")], 2)
+
+    def test_second_interval_preserves_cfg_rows_and_fallback(self):
+        hook, state, baseline, flat = self.hook(fail_mode="fallback_original")
+        got = hook.container_function(*flat, 2)
+        self.assertEqual(state.edited_calls, 1)
+        self.assertTrue(torch.equal(got[1], baseline[1]))
+        self.assertTrue(torch.equal(got[0, 6:], baseline[0, 6:]))
+        with patch("afm.adapter.edit_image_rows", side_effect=FloatingPointError("failure")):
+            self.assertIs(hook.container_function(*flat, 2), baseline)
+        self.assertEqual(state.fallback_calls, 1)
+        self.assertEqual(state.calls[(3, 0, 1, "edit")], 0)
 
 
 class FakeExecutor:

@@ -41,7 +41,7 @@ class AttentionOverride:
         tensors = tuple(x.peek() if hasattr(x, "peek") else x for x in (q, k, v))
         step, block = state.step_index, context["block"]
         selected = branch_rows(context["branches"], tensors[0].shape[0], config.branch_mode)
-        active = config.start_percent <= state.progress <= config.end_percent
+        active = config.active_interval(state.progress) in context["interval_ids"]
         action = "observe" if config.mode == "observe" else "edit"
         if not selected or not active:
             state.skipped_calls += 1
@@ -143,7 +143,9 @@ def install_afm(model, config):
     from comfy.patcher_extension import WrappersMP, get_all_wrappers
 
     caps = detect_native_moss(model)
-    scope = parse_block_scope(config.block_scope, caps.blocks)
+    first_scope = parse_block_scope(config.block_scope, caps.blocks)
+    second_scope = (parse_block_scope(config.second_block_scope, caps.blocks)
+                    if config.two_interval_mode else frozenset())
     if config.bypass:
         return model.clone()
     options = model.model_options.get("transformer_options", {})
@@ -168,6 +170,8 @@ def install_afm(model, config):
 
     def replacement_for(index):
         preferred = native.layers[index].comfy_attention
+        interval_ids = tuple(n for n, scope in ((1, first_scope), (2, second_scope))
+                             if index in scope)
 
         def replacement(args, extra):
             local = dict(args)
@@ -175,13 +179,13 @@ def install_afm(model, config):
             state = opts.get(RUN_KEY)
             if not isinstance(state, RunState) or state.finished:
                 raise RuntimeError("MOSS AFM block outside sampling run")
-            context = dict(opts[CONTEXT_KEY], block=index)
+            context = dict(opts[CONTEXT_KEY], block=index, interval_ids=interval_ids)
             opts["optimized_attention_override"] = AttentionOverride(
                 config, state, context, preferred, optimized_attention)
             local["transformer_options"] = opts
             return extra["original_block"](local)
         return replacement
 
-    for index in scope:
+    for index in first_scope | second_scope:
         clone.set_model_patch_replace(replacement_for(index), "dit", "single_block", index)
     return clone
