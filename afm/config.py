@@ -65,6 +65,10 @@ class AFMConfig:
     max_workspace_mib: float = 512.0
     fail_mode: str = "raise"
     logging: str = "summary"
+    two_interval_mode: bool = False
+    second_block_scope: str = "0-2"
+    second_start_percent: float = 0.5
+    second_end_percent: float = 1.0
 
     def __post_init__(self):
         enums = {"mode": ("off", "observe", "edit"),
@@ -75,12 +79,15 @@ class AFMConfig:
             if getattr(self, key) not in choices:
                 raise ValueError(f"Invalid {key}")
         for key in ("strength", "start_percent", "end_percent", "cutoff",
-                    "mask_width", "max_workspace_mib"):
+                    "mask_width", "max_workspace_mib", "second_start_percent",
+                    "second_end_percent"):
             value = getattr(self, key)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise ValueError(f"{key} must be finite")
         if not 0 <= self.start_percent <= self.end_percent <= 1:
             raise ValueError("Expected 0 <= start_percent <= end_percent <= 1")
+        if not 0 <= self.second_start_percent <= self.second_end_percent <= 1:
+            raise ValueError("Expected 0 <= second_start_percent <= second_end_percent <= 1")
         if not 0 < self.cutoff < 1 or not 0 < self.mask_width <= 1:
             raise ValueError("Invalid cutoff or mask_width")
         if self.max_workspace_mib <= 0:
@@ -88,9 +95,20 @@ class AFMConfig:
         for key in ("head_chunk_size", "query_chunk_size"):
             if type(getattr(self, key)) is not int or getattr(self, key) <= 0:
                 raise ValueError(f"{key} must be a positive integer")
-        for key in ("preserve_dc", "soft_mask"):
+        for key in ("preserve_dc", "soft_mask", "two_interval_mode"):
             if type(getattr(self, key)) is not bool:
                 raise ValueError(f"{key} must be boolean")
+
+    def active_interval(self, progress: float) -> int | None:
+        if (isinstance(progress, bool) or not isinstance(progress, (int, float))
+                or not math.isfinite(progress) or not 0 <= progress <= 1):
+            raise ValueError("progress must be finite and in [0, 1]")
+        if self.start_percent <= progress <= self.end_percent:
+            return 1
+        if (self.two_interval_mode
+                and self.second_start_percent <= progress <= self.second_end_percent):
+            return 2
+        return None
 
     @property
     def bypass(self):
