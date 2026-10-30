@@ -35,6 +35,40 @@ class ResidualConfig:
         return 1.0
 
 
+@dataclass(frozen=True)
+class ResidualTestConfig:
+    """Independent multipliers for consecutive groups of three joint blocks."""
+
+    blocks_00_02: float = 1.0
+    blocks_03_05: float = 1.0
+    blocks_06_08: float = 1.0
+    blocks_09_11: float = 1.0
+    blocks_12_14: float = 1.0
+    blocks_15_17: float = 1.0
+    blocks_18_20: float = 1.0
+    blocks_21_23: float = 1.0
+    blocks_24_26: float = 1.0
+    blocks_27_29: float = 1.0
+    blocks_30_32: float = 1.0
+    blocks_33_35: float = 1.0
+    blocks_36_38: float = 1.0
+    blocks_39_41: float = 1.0
+
+    def __post_init__(self):
+        for value in vars(self).values():
+            _validate_multiplier(value)
+
+    @property
+    def bypass(self):
+        return all(value == 1 for value in vars(self).values())
+
+    def multiplier_for(self, index: int) -> float:
+        if 0 <= index < 42:
+            start = index // 3 * 3
+            return getattr(self, f"blocks_{start:02d}_{start + 2:02d}")
+        return 1.0
+
+
 def scale_residual_mod(mod, multiplier: float) -> tuple[torch.Tensor, ...]:
     _validate_multiplier(multiplier)
     if (not isinstance(mod, (tuple, list)) or len(mod) != 6
@@ -64,7 +98,7 @@ class ResidualBlockPatch:
         return extra["original_block"](local)
 
 
-def install_residual(model, config: ResidualConfig):
+def install_residual(model, config: ResidualConfig | ResidualTestConfig):
     # Keep the math/config module importable without a ComfyUI runtime.
     from comfy.patcher_extension import WrappersMP, get_all_wrappers
     from .adapter import detect_native_moss

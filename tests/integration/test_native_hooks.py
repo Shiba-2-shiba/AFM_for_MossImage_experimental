@@ -173,6 +173,7 @@ class NativeTests(unittest.TestCase):
 
     def test_native_lora_residual_afm_prompt_validation(self):
         import asyncio
+        from itertools import product
         import execution
         import folder_paths
         import nodes as comfy_nodes
@@ -191,12 +192,16 @@ class NativeTests(unittest.TestCase):
                 return {'required': {'model': ('MODEL',)}}
 
         residual_node = self.node_class('MossImageResidual')
+        test_node = self.node_class('MossImageResidualTest')
         afm_node = self.node_class()
         mapping = {'ResidualTestSource': Source, 'ResidualTestOutput': Output,
-                   'MossImageResidual': residual_node, 'MossImageAFM': afm_node}
+                   'MossImageResidual': residual_node, 'MossImageResidualTest': test_node,
+                   'MossImageAFM': afm_node}
         with patch.dict(comfy_nodes.NODE_CLASS_MAPPINGS, mapping), \
                 patch.object(folder_paths, 'get_filename_list', return_value=['test.safetensors']):
-            for loader_type in ('LoraLoaderModelOnly', 'LoraLoader'):
+            for loader_type, residual_type in product(
+                    ('LoraLoaderModelOnly', 'LoraLoader'),
+                    ('MossImageResidual', 'MossImageResidualTest')):
                 inputs = {'model': ['1', 0], 'lora_name': 'test.safetensors', 'strength_model': 0.6}
                 if loader_type == 'LoraLoader':
                     inputs.update(clip=['1', 1], strength_clip=0.5)
@@ -214,17 +219,109 @@ class NativeTests(unittest.TestCase):
                                       'examples/moss_lora_residual_afm_api.json').read_text(encoding='utf-8'))
                 settings = next(n['inputs'] for n in example.values() if n['class_type'] == 'MossImageAFM')
                 prompt['4']['inputs'] = {**settings, 'model': ['3', 0]}
+                if residual_type == 'MossImageResidualTest':
+                    prompt['3'] = {'class_type': residual_type, 'inputs': {
+                        'model': ['2', 0], **{control.id: control.default
+                                              for control in test_node.define_schema().inputs[1:]}}}
+                    field = 'blocks_39_41'
+                else:
+                    field = 'mid_multiplier'
                 result = asyncio.run(execution.validate_prompt('residual-api', prompt, None))
                 self.assertTrue(result[0], result)
                 for value in (-0.1, float('nan'), float('inf'), 'nan'):
-                    prompt['3']['inputs']['mid_multiplier'] = value
+                    prompt['3']['inputs'][field] = value
                     with self.assertLogs(level='ERROR'):
                         self.assertFalse(asyncio.run(execution.validate_prompt('residual-invalid', prompt, None))[0])
                 # ComfyUI itself canonicalizes FLOAT literals before node validation.
                 for value, expected in ((True, 1.0), (False, 0.0), ('0.75', 0.75)):
-                    prompt['3']['inputs']['mid_multiplier'] = value
+                    prompt['3']['inputs'][field] = value
                     self.assertTrue(asyncio.run(execution.validate_prompt('residual-coercion', prompt, None))[0])
-                    self.assertEqual(prompt['3']['inputs']['mid_multiplier'], expected)
+                    self.assertEqual(prompt['3']['inputs'][field], expected)
+
+    def test_residual_test_schema_and_each_control_route(self):
+        node = self.node_class('MossImageResidualTest')
+        schema = node.define_schema()
+        names = [f'blocks_{start:02d}_{start + 2:02d}' for start in range(0, 42, 3)]
+        self.assertEqual(schema.display_name, 'MOSS Image Residual Test')
+        self.assertEqual(schema.category, 'model/patches/moss_image')
+        self.assertEqual([control.id for control in schema.inputs], ['model', *names])
+        self.assertEqual(len(schema.outputs), 1)
+        model = self.model(True, num_layers=42)
+        for group, control in enumerate(schema.inputs[1:]):
+            self.assertEqual((control.default, control.min, control.max, control.step),
+                             (1.0, 0, 2, 0.01))
+            output = node.execute(model, **{control.id: 0.75}).result[0]
+            patches = output.model_options['transformer_options']['patches_replace']['dit']
+            self.assertEqual(set(patches), {('single_block', i)
+                                           for i in range(group * 3, group * 3 + 3)})
+            self.assertTrue(all(p.multiplier == 0.75 for p in patches.values()))
+            for invalid in (True, '1', None, float('nan'), float('inf'), -0.01, 2.01):
+                with self.subTest(field=control.id, invalid=invalid), self.assertRaises(ValueError):
+                    node.execute(model, **{control.id: invalid})
+        self.assertNotIn('patches_replace', model.model_options['transformer_options'])
+
+    def test_residual_test_default_is_exact_noop(self):
+        node = self.node_class('MossImageResidualTest')
+        for fused in (False, True):
+            model = self.model(fused, num_layers=42)
+            x, text = torch.randn(2, 8, 2, 3), torch.randn(2, 4, 16)
+            before, _ = self.evaluate_patched(model, x, text)
+            clone = node.execute(model).result[0]
+            self.assertIsNot(clone, model)
+            self.assertEqual(clone.model_options, model.model_options)
+            self.assertEqual(clone.wrappers, model.wrappers)
+            actual, _ = self.evaluate_patched(clone, x, text)
+            torch.testing.assert_close(actual, before, rtol=0, atol=0)
+            node.execute(model, blocks_00_02=0.75, blocks_39_41=1.15)
+            after, _ = self.evaluate_patched(model, x, text)
+            torch.testing.assert_close(after, before, rtol=0, atol=0)
+
+    def test_residual_test_matches_projection_scaling_and_afm(self):
+        from afm.adapter import install_afm
+        from afm.config import AFMConfig
+        from afm.residual import ResidualTestConfig, install_residual
+        for fused in (False, True):
+            with self.subTest(fused=fused), torch.inference_mode():
+                model = self.model(fused, num_layers=42)
+                reference = self.model(fused, num_layers=42)
+                for start, stop, factor in ((0, 3, 0.75), (12, 15, 0),
+                                             (24, 27, 1.15), (39, 42, 2)):
+                    for block in reference.model.diffusion_model.layers[start:stop]:
+                        for name in ('o', 'ffn_down'):
+                            block.proj[name].weight.mul_(factor)
+                residual = install_residual(model, ResidualTestConfig(
+                    blocks_00_02=0.75, blocks_12_14=0, blocks_24_26=1.15, blocks_39_41=2))
+                x, text = torch.randn(2, 8, 2, 3), torch.randn(2, 4, 16)
+                actual, _ = self.evaluate_patched(residual, x, text)
+                expected, _ = self.evaluate_patched(reference, x, text)
+                torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
+                for mode, scope in (('observe', '24-26'), ('edit', '0-2'),
+                                    ('edit', '24-26'), ('edit', '30-32')):
+                    config = AFMConfig(mode=mode, block_scope=scope, strength=0.2, logging='off')
+                    combined = install_afm(residual, config)
+                    actual, state = self.evaluate_patched(combined, x, text, config)
+                    expected, _ = self.evaluate_patched(install_afm(reference, config),
+                                                        x, text, config)
+                    torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
+                    self.assertEqual(state.edited_calls if mode == 'edit' else state.observed_calls, 3)
+
+    def test_residual_test_keeps_patch_conflict_guards(self):
+        from afm.adapter import install_afm
+        from afm.config import AFMConfig
+        from afm.residual import ResidualConfig, ResidualTestConfig, install_residual
+        model = self.model(True, num_layers=42)
+        old = ResidualConfig(0.75, 1.15)
+        new = ResidualTestConfig(blocks_00_02=0.75)
+        for first in (old, new):
+            for second in (old, new):
+                with self.assertRaises(ValueError):
+                    install_residual(install_residual(model, first), second)
+        with self.assertRaises(ValueError):
+            install_residual(install_afm(model, AFMConfig(logging='off')), new)
+        residual = install_residual(model, new)
+        residual.model_options['transformer_options']['patches_replace']['dit'].pop(('single_block', 0))
+        with self.assertRaises(ValueError):
+            install_afm(residual, AFMConfig(logging='off'))
 
     def test_residual_native_noop_and_branch_isolation(self):
         from afm.residual import ResidualConfig, install_residual

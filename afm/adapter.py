@@ -6,7 +6,7 @@ import torch
 from .attention import edit_image_rows, write_image_rows
 from .config import parse_block_scope
 from .memory import MemoryGuardError, plan_chunks
-from .residual import RESIDUAL_CONFIG_KEY, ResidualBlockPatch, ResidualConfig
+from .residual import RESIDUAL_CONFIG_KEY, ResidualBlockPatch, ResidualConfig, ResidualTestConfig
 from .runtime import (CONFIG_KEY, CONTEXT_KEY, RUN_KEY, RunState, branch_rows,
                       make_diffusion_wrapper, make_outer_wrapper)
 
@@ -155,7 +155,7 @@ def install_afm(model, config):
     existing_blocks = options.get("patches_replace", {}).get("dit", {})
     if existing_blocks or RESIDUAL_CONFIG_KEY in options:
         residual_config = options.get(RESIDUAL_CONFIG_KEY)
-        if (type(residual_config) is not ResidualConfig or residual_config.bypass
+        if (type(residual_config) not in (ResidualConfig, ResidualTestConfig) or residual_config.bypass
                 or caps.blocks != 42):
             raise ValueError("Existing DiT block replacement conflicts with MOSS AFM")
         expected = {("single_block", i): residual_config.multiplier_for(i)

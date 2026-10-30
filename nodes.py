@@ -2,7 +2,7 @@ from comfy_api.latest import ComfyExtension, io
 
 from .afm.adapter import install_afm
 from .afm.config import AFMConfig
-from .afm.residual import ResidualConfig, install_residual
+from .afm.residual import ResidualConfig, ResidualTestConfig, install_residual
 
 
 class MossImageAFM(io.ComfyNode):
@@ -112,6 +112,43 @@ class MossImageResidual(io.ComfyNode):
         return io.NodeOutput(install_residual(model, ResidualConfig(mid_multiplier, late_multiplier)))
 
 
+class MossImageResidualTest(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="MossImageResidualTest", display_name="MOSS Image Residual Test",
+            category="model/patches/moss_image",
+            description=("Native MOSSの全42ブロックを3ブロックずつ倍率調整するtestノード。"
+                         "全項目1.0で変更なし。変更したい区間だけ調整してください。"
+                         "LoRA適用後、MOSS Image AFMの前へ接続します。"),
+            inputs=[
+                io.Model.Input("model"),
+                *[io.Float.Input(
+                    f"blocks_{start:02d}_{start + 2:02d}",
+                    default=1.0, min=0, max=2, step=0.01,
+                    display_name=f"{start}-{start + 2}の倍率",
+                    tooltip="0始まり・両端を含む3ブロック。1.0で変更なし。"
+                            "LoRAを含むAttention＋MLP出力を、画像・テキスト、両CFG・全期間で調整。")
+                  for start in range(0, 42, 3)],
+            ],
+            outputs=[io.Model.Output()],
+        )
+
+    @classmethod
+    def validate_inputs(cls, **multipliers):
+        # ComfyUI supplies available literals; linked inputs are validated in execute.
+        try:
+            ResidualTestConfig(**{name: 1.0 if value is None else value
+                                  for name, value in multipliers.items() if name != "model"})
+        except (TypeError, ValueError) as exc:
+            return str(exc)
+        return True
+
+    @classmethod
+    def execute(cls, model, **multipliers):
+        return io.NodeOutput(install_residual(model, ResidualTestConfig(**multipliers)))
+
+
 class MossAFMExtension(ComfyExtension):
     async def get_node_list(self):
-        return [MossImageAFM, MossImageResidual]
+        return [MossImageAFM, MossImageResidual, MossImageResidualTest]

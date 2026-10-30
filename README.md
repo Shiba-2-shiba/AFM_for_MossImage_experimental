@@ -145,6 +145,33 @@ helperのLoRA対応は`LoraLoaderModelOnly`に限定します。CLIPも変更す
 例の生成時は`--model-lora NAME STRENGTH`を繰り返して複数LoRAを指定できます。
 smokeでは未適用のLoRAキーがあれば失敗とし、ファイルごとの適用キーをreportへ記録します。
 
+## Residual Test（3ブロック刻み）
+
+**MOSS Image Residual Test**は、全42ブロックを3個ずつ、14区間で個別に調整する別ノードです。
+既存のMOSS Image Residualと同じカテゴリ`model/patches/moss_image`に追加されます。
+
+```text
+Load Diffusion Model → Load LoRA（任意）→ MOSS Image Residual Test → MOSS Image AFM（任意）→ KSampler
+```
+
+対象は`0–2 / 3–5 / 6–8 / 9–11 / 12–14 / 15–17 / 18–20 / 21–23 / 24–26 / 27–29 /
+30–32 / 33–35 / 36–38 / 39–41`です。番号は0始まり・両端を含み、重複や隙間はありません。
+全項目が**デフォルト1.0、範囲0～2、刻み0.01**です。
+
+変更したい区間だけ値を変えてください。例えば`24–26の倍率=0.95`、残りを`1.0`にすると、
+block 24・25・26のAttention＋MLP残差だけを直接倍率調整します。
+API入力名は`blocks_00_02`、`blocks_03_05`、…、`blocks_39_41`です。
+全項目1.0では追加パッチのないMODEL cloneを返します。
+
+LoRA後、画像・テキスト、両CFG、全ステップへの適用などは既存Residualと共通です。
+細分化は調整箇所を絞るためのもので、後段への影響や生成画像の副作用をなくす保証はありません。
+既存ResidualとTestのどちらか1つを使い、AFMと併用する場合はAFMの前へ接続してください。
+既存ノードと保存済みワークフローは変更しません。
+
+Testノードは通常のComfyUI UI/APIで利用します。`tools/run_gpu_smoke.py`の専用parserは
+Testノードに未対応です。今回の追加は小型nativeモデル・API検証で確認しており、
+実画像での最適倍率探索は含みません。
+
 ## Tests and smoke helper
 
 ```powershell

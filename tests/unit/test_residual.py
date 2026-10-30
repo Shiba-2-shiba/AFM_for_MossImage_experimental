@@ -4,6 +4,34 @@ import torch
 
 
 class ResidualTests(unittest.TestCase):
+    def test_test_config_covers_every_block_independently(self):
+        from dataclasses import fields
+        from afm.residual import ResidualTestConfig
+        names = [f'blocks_{start:02d}_{start + 2:02d}' for start in range(0, 42, 3)]
+        self.assertEqual([field.name for field in fields(ResidualTestConfig)], names)
+        self.assertTrue(ResidualTestConfig().bypass)
+        for group, name in enumerate(names):
+            with self.subTest(name=name):
+                config = ResidualTestConfig(**{name: 0.75})
+                expected = [1.0] * 42
+                expected[group * 3:group * 3 + 3] = [0.75] * 3
+                self.assertEqual([config.multiplier_for(i) for i in range(42)], expected)
+                self.assertEqual(config.multiplier_for(-1), 1.0)
+                self.assertEqual(config.multiplier_for(42), 1.0)
+                self.assertFalse(config.bypass)
+
+    def test_test_config_validates_every_multiplier(self):
+        from dataclasses import fields
+        from afm.residual import ResidualTestConfig
+        for field in fields(ResidualTestConfig):
+            for value in (True, '1', None, float('nan'), float('inf'),
+                          -float('inf'), -0.01, 2.01):
+                with self.subTest(name=field.name, value=value), self.assertRaises(ValueError):
+                    ResidualTestConfig(**{field.name: value})
+            for value in (0, 1, 2, 0.755):
+                config = ResidualTestConfig(**{field.name: value})
+                self.assertEqual(getattr(config, field.name), value)
+
     def test_fixed_ranges_and_boundaries(self):
         from afm.residual import ResidualConfig
         config = ResidualConfig(0.75, 1.15)
