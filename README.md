@@ -3,14 +3,14 @@
 Experimental Attention Frequency Modulation for native MOSS-Image.
 The AFM node edits image-query/text-key logits on the actual latent grid, followed by
 joint normalization over image and text keys. AFM and Residual leave model weights unchanged.
-The optional K Row Balance experiment changes block-41 K weight row scales in a cloned
+The optional K Row Balance experiment changes selected-block K weight row scales in a cloned
 runtime model; it does not write checkpoint files.
 
 ## K Row Balance（実験用）
 
 **MOSS Image K Row Balance (Experimental)** を追加しました。
-native MOSSの融合INT8 ConvRotモデルについて、block41のK重みの行ノルムを
-head内で小幅に調整します。INT8コードとQ/Vのscaleを保持し、再量子化を避けます。
+native MOSSの融合INT8 ConvRotモデルについて、選択したblockのK重みの行ノルムを
+head内で調整します。INT8コードとQ/Vのscaleを保持し、再量子化を避けます。
 画像品質が改善することは未確認です。
 
 接続は `UNETLoader → MOSS Image K Row Balance → KSampler`。
@@ -19,8 +19,17 @@ head内で小幅に調整します。INT8コードとQ/Vのscaleを保持し、�
 `strength=1 / max_change=0` は、重みの数値を変えない再構成対照です。
 初期比較ではResidual・AFM・LoRAを重ねません。
 
+v2では `strength=-10～10`、`max_change=0～0.95` に対応します。
+任意の0～41ブロックを `blocks` に指定できます（既定は従来通り`41`）。
+例: `0,1,2,22,24,26,30,31,40,41`、または`0-2`。
+動的patcherはComfyUIのネイティブ非動的delegateへ変換し、通常の派生patcherも受け付けます。
+初回のdelegate作成でモデルの再読み込みやメモリー使用量が変わる場合があります。
+強度を上げても倍率上限に達した行はそれ以上変わりません。STRINGレポートとログに
+対象block、実際の設定、変更行数、上限到達行数、patcher変換を記録します。
+
 仕様・対応条件・切り戻し・検証範囲は [K Row Balance](docs/k-row-balance.md)、
 API例は [examples/k_row_balance](examples/k_row_balance/) を参照してください。
+複数block・strength2/cap0.3のAPI例は [examples/k_row_balance_multi](examples/k_row_balance_multi/) にあります。
 API JSONはUIへ読み込む形式ではありません。手元のUI workflowから比較用コピーを
 作るには `tools/build_k_balance_examples.py` を使用します。
 

@@ -1,12 +1,13 @@
 import json
+import logging
 
 from comfy_api.latest import ComfyExtension, io
 
 from .afm.adapter import install_afm
 from .afm.config import AFMConfig
 from .afm.residual import ResidualConfig, ResidualTestConfig, install_residual
-from .afm.k_balance import install_k_balance
-from .afm.k_balance_math import KBalanceConfig
+from .afm.k_balance import install_k_balance, parse_k_blocks
+from .afm.k_balance_math import KBalanceConfig, STRENGTH_LIMIT, MAX_CHANGE_LIMIT
 
 
 class MossImageAFM(io.ComfyNode):
@@ -159,32 +160,43 @@ class MossImageKRowBalance(io.ComfyNode):
         return io.Schema(
             node_id="MossImageKRowBalance", display_name="MOSS Image K Row Balance (Experimental)",
             category="model/patches/moss_image",
-            description=("Block 41のK重みの行ノルムをhead内で小幅調整する実験ノード。"
+            description=("選択したblockのK重みの行ノルムをhead内で調整する実験ノード。"
                          "native MOSSの融合INT8 ConvRot限定。画質改善は未確認。"
                          "最初はResidual/AFM/LoRAを併用せず単独で比較してください。"),
             inputs=[
                 io.Model.Input("model"),
-                io.Float.Input("strength", default=0.0, min=-1.0, max=1.0, step=0.05,
-                               tooltip="0は入力MODELをcloneするだけ。正はhead内の偏りを緩和、負は逆方向の対照。"),
-                io.Float.Input("max_change", default=0.03, min=0.0, max=0.10, step=0.01,
+                io.Float.Input("strength", default=0.0, min=-STRENGTH_LIMIT, max=STRENGTH_LIMIT,
+                               step=0.05, tooltip="0はcloneのみ。1まではhead内の偏りを緩和。"
+                               "1を超えると過補正も起こり得ます。負は逆方向。"),
+                io.Float.Input("max_change", default=0.03, min=0.0, max=MAX_CHANGE_LIMIT, step=0.01,
                                advanced=True, tooltip="各K行の倍率の変化上限。0.03なら0.97～1.03。"
                                "strengthが非0で上限0なら、数値を変えない再構成対照。"),
+                io.String.Input("blocks", default="41", optional=True,
+                                tooltip="0始まり。例: 0,1,2,22,24,26,30,31,40,41。"
+                                "0-2などの範囲とallにも対応。指定した全blockに共通設定を適用。"),
             ],
             outputs=[io.Model.Output(), io.String.Output("report", display_name="K balance report")],
         )
 
     @classmethod
-    def validate_inputs(cls, strength=None, max_change=None):
+    def validate_inputs(cls, strength=None, max_change=None, blocks=None):
         try:
             KBalanceConfig(0.0 if strength is None else strength,
                            0.03 if max_change is None else max_change)
+            if blocks is not None:
+                parse_k_blocks(blocks)
         except ValueError as exc:
             return str(exc)
         return True
 
     @classmethod
-    def execute(cls, model, strength=0.0, max_change=0.03):
-        result, report = install_k_balance(model, KBalanceConfig(strength, max_change))
+    def execute(cls, model, strength=0.0, max_change=0.03, blocks="41"):
+        result, report = install_k_balance(model, KBalanceConfig(strength, max_change), blocks)
+        logging.info("MOSS K Row Balance v2 prepared: blocks=%s strength=%s max_change=%s "
+                     "changed_rows=%s clipped_rows=%s delegate=%s patcher=%s -> %s",
+                     report["block_indices"], strength, max_change, report["changed_rows"],
+                     report.get("clipped_rows", 0), report["dynamic_delegate_used"],
+                     report["input_patcher_type"], report["effective_patcher_type"])
         return io.NodeOutput(result, json.dumps(report, ensure_ascii=False, allow_nan=False))
 
 

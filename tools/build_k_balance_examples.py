@@ -10,20 +10,55 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 from pathlib import Path
+import sys
 from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from afm.config import parse_block_scope
 
 
 NODE_TYPE = "MossImageKRowBalance"
 DISPLAY_NAME = "MOSS Image K Row Balance (Experimental)"
 SCOPE = "fixed block 41 INT8 K-scale correction"
 MAX_CHANGE = 0.03
-VARIANTS = (
-    ("identity", 0.0, MAX_CHANGE),
-    ("rebuild_control", 1.0, 0.0),
-    ("compress", 1.0, MAX_CHANGE),
-    ("reverse", -1.0, MAX_CHANGE),
-)
+BLOCK_COUNT = 42
+STRENGTH_LIMIT = 10.0
+MAX_CHANGE_LIMIT = 0.95
+
+
+def _settings(blocks: str, strength: float, max_change: float) -> tuple[str, float, float]:
+    if not isinstance(blocks, str):
+        raise ValueError("blocks must be a string")
+    parse_block_scope(blocks, BLOCK_COUNT)
+    for name, value in (("strength", strength), ("max_change", max_change)):
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value)):
+            raise ValueError(f"{name} must be a finite number")
+    if not 0 <= strength <= STRENGTH_LIMIT:
+        raise ValueError(f"strength magnitude must be in [0, {STRENGTH_LIMIT:g}]")
+    if not 0 <= max_change <= MAX_CHANGE_LIMIT:
+        raise ValueError(f"max_change must be in [0, {MAX_CHANGE_LIMIT:g}]")
+    return blocks, float(strength), float(max_change)
+
+
+def _variant_settings(strength: float, max_change: float):
+    return (
+        ("identity", 0.0, max_change),
+        ("rebuild_control", strength, 0.0),
+        ("compress", strength, max_change),
+        ("reverse", -strength, max_change),
+    )
+
+
+def _scope(blocks: str) -> str:
+    if blocks == "41":
+        return SCOPE
+    return f"selected blocks {blocks} INT8 K-scale correction"
 
 
 def _format(workflow: dict[str, Any]) -> str:
@@ -72,6 +107,7 @@ def _set_api_prefixes(workflow: dict[str, Any], variant: str) -> None:
 
 def _build_api(
     workflow: dict[str, Any], variant: str, strength: float, max_change: float,
+    blocks: str,
 ) -> dict[str, Any]:
     result = copy.deepcopy(workflow)
     sampler_id, sampler, source_id = _api_sampler(result)
@@ -82,10 +118,11 @@ def _build_api(
             "model": [source_id, 0],
             "strength": strength,
             "max_change": max_change,
+            "blocks": blocks,
         },
         "_meta": {
             "title": DISPLAY_NAME,
-            "description": f"{SCOPE}; generated comparison variant: {variant}",
+            "description": f"{_scope(blocks)}; generated comparison variant: {variant}",
         },
     }
     sampler["inputs"]["model"] = [node_id, 0]
@@ -166,6 +203,7 @@ def _set_ui_prefixes(workflow: dict[str, Any], variant: str) -> None:
 
 def _build_ui(
     workflow: dict[str, Any], variant: str, strength: float, max_change: float,
+    blocks: str,
 ) -> dict[str, Any]:
     result = copy.deepcopy(workflow)
     sampler, model_input, source, old_link, input_slot, old_link_id = _ui_sampler_path(result)
@@ -189,7 +227,7 @@ def _build_ui(
             {"name": "report", "type": "STRING", "links": None, "slot_index": 1},
         ],
         "properties": {"Node name for S&R": NODE_TYPE},
-        "widgets_values": [strength, max_change],
+        "widgets_values": [strength, max_change, blocks],
     }
     source_links = source["outputs"][old_link[2]]["links"]
     source["outputs"][old_link[2]]["links"] = [
@@ -206,18 +244,20 @@ def _build_ui(
     result["last_link_id"] = output_link_id
     extra = result.setdefault("extra", {})
     extra["workflow_description"] = (
-        f"{SCOPE}; generated {variant} comparison. Actual quality unverified."
+        f"{_scope(blocks)}; generated {variant} comparison. Actual quality unverified."
     )
     _set_ui_prefixes(result, variant)
     return result
 
 
 def build_variants(
-    workflow: dict[str, Any], *, include_baseline: bool = False,
+    workflow: dict[str, Any], *, include_baseline: bool = False, blocks: str = "41",
+    strength: float = 1.0, max_change: float = MAX_CHANGE,
 ) -> dict[str, dict[str, Any]]:
     """Return independent controlled variants without modifying ``workflow``."""
     if not isinstance(workflow, dict):
         raise ValueError("workflow JSON root must be an object")
+    blocks, strength, max_change = _settings(blocks, strength, max_change)
     workflow_format = _format(workflow)
     # Validate before producing even the optional baseline copy.
     if workflow_format == "api":
@@ -234,11 +274,13 @@ def build_variants(
         else:
             _set_ui_prefixes(baseline, "baseline")
             baseline.setdefault("extra", {})["workflow_description"] = (
-                f"Unmodified model path baseline for {SCOPE}. Actual quality unverified."
+                f"Unmodified model path baseline for {_scope(blocks)}. Actual quality unverified."
             )
         variants["baseline"] = baseline
-    for name, strength, max_change in VARIANTS:
-        variants[name] = build(workflow, name, strength, max_change)
+    for name, variant_strength, variant_max_change in _variant_settings(strength, max_change):
+        variants[name] = build(
+            workflow, name, variant_strength, variant_max_change, blocks
+        )
     return variants
 
 
@@ -253,18 +295,26 @@ def write_examples(
     source_name: str,
     source_bytes: bytes,
     include_baseline: bool = False,
+    blocks: str = "41",
+    strength: float = 1.0,
+    max_change: float = MAX_CHANGE,
 ) -> dict[str, Any]:
     """Write variants and a hash manifest to a new output directory."""
     output_path = Path(output)
     if output_path.exists():
         raise FileExistsError(f"output already exists: {output_path}")
     workflow_format = _format(workflow)
-    variants = build_variants(workflow, include_baseline=include_baseline)
+    blocks, strength, max_change = _settings(blocks, strength, max_change)
+    variants = build_variants(
+        workflow, include_baseline=include_baseline, blocks=blocks,
+        strength=strength, max_change=max_change,
+    )
     suffix = "api" if workflow_format == "api" else "ui"
     payloads: dict[str, bytes] = {}
     variant_records: dict[str, dict[str, Any]] = {}
-    settings = {name: (strength, max_change)
-                for name, strength, max_change in VARIANTS}
+    settings = {name: (variant_strength, variant_max_change)
+                for name, variant_strength, variant_max_change
+                in _variant_settings(strength, max_change)}
     for name, variant in variants.items():
         filename = f"moss_k_balance_{name}_{suffix}.json"
         payloads[filename] = _json_bytes(variant)
@@ -272,6 +322,7 @@ def write_examples(
             "file": filename,
             "strength": None if name == "baseline" else settings[name][0],
             "max_change": None if name == "baseline" else settings[name][1],
+            "blocks": None if name == "baseline" else blocks,
         }
     manifest = {
         "source": {
@@ -279,7 +330,10 @@ def write_examples(
             "sha256": hashlib.sha256(source_bytes).hexdigest(),
             "format": suffix,
         },
-        "scope": SCOPE,
+        "scope": _scope(blocks),
+        "settings": {
+            "blocks": blocks, "strength": strength, "max_change": max_change,
+        },
         "quality": "actual quality unverified",
         "variants": variant_records,
         "files": {name: hashlib.sha256(payload).hexdigest()
@@ -297,6 +351,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workflow", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--include-baseline", action="store_true")
+    parser.add_argument("--blocks", default="41")
+    parser.add_argument("--strength", type=float, default=1.0)
+    parser.add_argument("--max-change", type=float, default=MAX_CHANGE)
     options = parser.parse_args(argv)
     try:
         source_bytes = options.workflow.read_bytes()
@@ -307,6 +364,9 @@ def main(argv: list[str] | None = None) -> int:
             source_name=options.workflow.name,
             source_bytes=source_bytes,
             include_baseline=options.include_baseline,
+            blocks=options.blocks,
+            strength=options.strength,
+            max_change=options.max_change,
         )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         parser.error(str(error))

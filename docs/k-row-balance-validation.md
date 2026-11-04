@@ -1,5 +1,7 @@
 # K Row Balance 検証記録
 
+この記録は初版（block41）の結果です。拡張と型チェック修正は [v2検証記録](k-row-balance-multi-validation.md) を参照してください。
+
 2026-11-04。ComfyUI参考commit `7f09d3fa4a783868fe39d4d63cf4f815e58abecd`、
 手元のPython3.10.11 / torch2.10.0+cpu / comfy-kitchen0.2.39でCPU試験。
 既存プロジェクトの配布条件Python3.12+は変更していません。

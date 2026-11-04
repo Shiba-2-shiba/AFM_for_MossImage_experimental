@@ -1,0 +1,53 @@
+{
+  "source": {
+    "file": "moss_afm_baseline_api.json",
+    "sha256": "1203484b3ebcd7142661ec75ae79328c364615ed9fe7017b89366306d9978b38",
+    "format": "api"
+  },
+  "scope": "selected blocks 0,1,2,22,24,26,30,31,40,41 INT8 K-scale correction",
+  "settings": {
+    "blocks": "0,1,2,22,24,26,30,31,40,41",
+    "strength": 2.0,
+    "max_change": 0.3
+  },
+  "quality": "actual quality unverified",
+  "variants": {
+    "baseline": {
+      "file": "moss_k_balance_baseline_api.json",
+      "strength": null,
+      "max_change": null,
+      "blocks": null
+    },
+    "identity": {
+      "file": "moss_k_balance_identity_api.json",
+      "strength": 0.0,
+      "max_change": 0.3,
+      "blocks": "0,1,2,22,24,26,30,31,40,41"
+    },
+    "rebuild_control": {
+      "file": "moss_k_balance_rebuild_control_api.json",
+      "strength": 2.0,
+      "max_change": 0.0,
+      "blocks": "0,1,2,22,24,26,30,31,40,41"
+    },
+    "compress": {
+      "file": "moss_k_balance_compress_api.json",
+      "strength": 2.0,
+      "max_change": 0.3,
+      "blocks": "0,1,2,22,24,26,30,31,40,41"
+    },
+    "reverse": {
+      "file": "moss_k_balance_reverse_api.json",
+      "strength": -2.0,
+      "max_change": 0.3,
+      "blocks": "0,1,2,22,24,26,30,31,40,41"
+    }
+  },
+  "files": {
+    "moss_k_balance_baseline_api.json": "fa050f0d678987caa96d354abbc1e81a73baf008f63bf089296f78ec5fbda5d8",
+    "moss_k_balance_identity_api.json": "34bcee2edf6a9549f9031697b95a589da97e0fbe034cac50ca84f53c2e500d49",
+    "moss_k_balance_rebuild_control_api.json": "623b391a683d0289995c3fe268751039a42200c2c3189f8077192a7ffafc84ed",
+    "moss_k_balance_compress_api.json": "ac2e80ee1ebecb25b106d9cc49555df4893dc958d87762b0daf28c04be5f1fe9",
+    "moss_k_balance_reverse_api.json": "48c8cfbdac1be7e9d145706a712098c04d6dbfcdb0be3d43ff3234617de310b2"
+  }
+}

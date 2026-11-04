@@ -4,6 +4,10 @@ import math
 import torch
 
 
+STRENGTH_LIMIT = 10.0
+MAX_CHANGE_LIMIT = 0.95
+
+
 @dataclass(frozen=True)
 class KBalanceConfig:
     strength: float = 0.0
@@ -18,10 +22,10 @@ class KBalanceConfig:
                 or not math.isfinite(value)
             ):
                 raise ValueError(f"{name} must be a finite number")
-        if not -1 <= self.strength <= 1:
-            raise ValueError("strength must be in [-1, 1]")
-        if not 0 <= self.max_change <= 0.10:
-            raise ValueError("max_change must be in [0, 0.10]")
+        if not -STRENGTH_LIMIT <= self.strength <= STRENGTH_LIMIT:
+            raise ValueError(f"strength must be in [-{STRENGTH_LIMIT:g}, {STRENGTH_LIMIT:g}]")
+        if not 0 <= self.max_change <= MAX_CHANGE_LIMIT:
+            raise ValueError(f"max_change must be in [0, {MAX_CHANGE_LIMIT:g}]")
 
     @property
     def bypass(self) -> bool:
@@ -84,6 +88,7 @@ def _report(
     after: torch.Tensor,
     gains: torch.Tensor,
     changed_rows: int,
+    clipped_rows: int,
     head_dim: int,
     config: KBalanceConfig,
     chunk_rows: int,
@@ -104,6 +109,8 @@ def _report(
         "strength": float(config.strength),
         "max_change": float(config.max_change),
         "changed_rows": changed_rows,
+        "clipped_rows": clipped_rows,
+        "clipped_fraction": clipped_rows / before.numel(),
         "gain_min": float(gains.min().item()),
         "gain_max": float(gains.max().item()),
         "row_p99_over_p50": {
@@ -144,11 +151,17 @@ def compute_k_gains(
 
     if config.bypass:
         gains = torch.ones((k_codes.shape[0], 1), dtype=torch.float32)
+        clipped_rows = 0
     else:
         heads = row_norms.reshape(-1, head_dim)
         medians = torch.quantile(heads, 0.5, dim=1).repeat_interleave(head_dim)
         log_gains = config.strength * (medians.log() - row_norms.log())
-        log_gains.clamp_(math.log1p(-config.max_change), math.log1p(config.max_change))
+        lower_bound = math.log1p(-config.max_change)
+        upper_bound = math.log1p(config.max_change)
+        clipped_rows = int(
+            torch.count_nonzero((log_gains < lower_bound) | (log_gains > upper_bound)).item()
+        )
+        log_gains.clamp_(lower_bound, upper_bound)
         gains = log_gains.exp().to(dtype=torch.float32).reshape(-1, 1)
 
     new_scales = scales * gains
@@ -163,6 +176,7 @@ def compute_k_gains(
         after_norms,
         gains,
         int(torch.count_nonzero(new_scales != scales).item()),
+        clipped_rows,
         head_dim,
         config,
         chunk_rows,

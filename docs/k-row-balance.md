@@ -1,6 +1,6 @@
 # MOSS Image K Row Balance (Experimental)
 
-block41のK重みの行ごとの大きさを、head内で小幅に揃える仮説を検証するノードです。
+選択したblockのK重みの行ごとの大きさを、head内で調整する仮説を検証するノードです。
 重み統計の偏りが画像の欠点の原因だとは確認されていません。
 レポートの偏り指標が減ることは処理の確認であり、画質改善の証明ではありません。
 
@@ -21,15 +21,45 @@ MODEL出力はslot0です。slot1のSTRING出力には変更量と数値レポ�
 モデル・VAE・steps・CFG等で正負を比較します。最初からResidual/AFM/LoRAを重ねず、
 この処理の効果を分離してください。UIのstrength既定値は0です。
 
+## v2: 強度・対象ブロック・patcher互換性
+
+既存の入力順序と既定値を保持し、末尾に任意の `blocks` 欄を追加しました。
+省略した古いworkflowは従来通りblock41を使います。
+
+- `strength`: −10～10。既定0。
+- `max_change`: 0～0.95。既定0.03。0.3なら倍率0.7～1.3、0.5なら0.5～1.5。
+  1未満に制限し、log計算と正のscaleを維持します。
+- `blocks`: 0始まりの整数、カンマ区切り、両端込み範囲、`all`。
+  例 `0,1,2,22,24,26,30,31,40,41` / `0-2` / `41`。
+  全指定blockに同じstrength/max_changeを使います。
+
+強めの比較設定例は **strength=2 / max_change=0.3** です。まず単独blockで確認してから
+複数blockへ広げると変化を切り分けやすくなります。strength>1は中央値を越える過補正が
+起こり得るため、「大きいほど正しく均される」「大きいほど画質が良い」とは限りません。
+`clipped_rows` / `clipped_fraction` は倍率上限に達した行です。同じcapのままstrengthだけを
+上げても、すでに上限にある行の変化は増えません。
+
+旧版の `K Row Balance currently requires the standard ModelPatcher` は、補正前に
+派生型・動的patcherを一律に拒否したものです。v2は通常のModelPatcher派生型を受理し、
+動的入力はComfyUIの `get_non_dynamic_delegate()` で通常モデルへ変換します。
+最初はcached loaderからの再読み込みがあり、次回以降はネイティブdelegateのキャッシュを
+再利用します。動的モデルの内部メモリーを直接書き換える実装ではありません。
+cached loaderがない場合など、変換できない入力はエラーのまま明示します。
+
+レポートには受信したstrength/cap、block一覧と個別の数値、入力/使用patcher型、
+delegate使用の有無が入ります。実行ログにも概要を出します。GPU上の動的モデル全体での
+検証は未実施で、CPUテストはネイティブdelegate/cloneメソッドを使ったharnessです。
+
 戻すには、このノードの入力を元のUNETLoaderのままにしてstrengthを0へ戻すか、
 ノードを外して元workflowへ戻します。strength=0は「入力モデルへの追加変更なし」であり、
 他の上流ノードの変更を取り消す機能ではありません。チェックポイントは保存しません。
 
 ## 補正内容
 
-対象はnative MOSSの **block41（0始まり）** です。42ブロック、24heads、head_dim128、
+対象はnative MOSSの **選択したblock（既定41、0始まり）** です。42ブロック、24heads、head_dim128、
 融合QKV `[9216,3072]` のK部分 `[3072:6144]` を扱います。
-block0の低いRMSを一律に引き上げる処理は、この初期ノードには含めていません。
+どのblockでも同じhead内の行バランス処理です。block0を指定しても、K全体を一律に
+引き上げる処理にはなりません。低いRMSだけから必要な補正方向を決めません。
 
 K行iについて、保存されたINT8コードqと行scale sから、
 `r_i = s_i × ||q_i||2` をCPUのFP64で集計します。
@@ -59,7 +89,7 @@ Kはこの後にRMSNormとRoPEを通ります。一律なhead倍率は相殺さ�
 
 - canonical `int8_tensorwise` / `TensorWiseINT8Layout`、ConvRot group256、
   FP32 `[9216,1]` scale、biasなしのQKVに限定。
-- compute metadataはFP32/BF16。FP8、非融合QKV、動的patcher、compiled/multi-GPU、
+- compute metadataはFP32/BF16。FP8、非融合QKV、compiled/multi-GPU、
   GEMV-packed targetや追加のtarget scale設定は初期版の対象外。
 - 対象QKVへの既存LoRA/diff/set/object patch、weight wrapper、モデルhookなどの
   衝突はエラーにします。互換性のない入力を黙って別の計算へ変更しません。
@@ -67,12 +97,15 @@ Kはこの後にRMSNormとRoPEを通ります。一律なhead倍率は相殺さ�
   apply/unpatchで元のmoduleへ戻します。variantごとにcache識別を更新します。
   独自に複数cloneを同時patchする使い方は検証していません。
 - 元モデルとは別に、対象QKVのINT8コピー等の一時領域・保持領域が必要です。
+  保持領域は1blockあたり約27 MiBで、指定数に比例します。全対象の準備が成功した後に
+  1つのcloneへまとめて登録し、途中の失敗で一部の元moduleを変更しません。
   ノードの推定値は総VRAM保証ではありません。GPU全体のメモリー挙動は未検証です。
 
 ## 比較用ファイル
 
 ```powershell
 python tools/build_k_balance_examples.py --workflow path/to/workflow.json --output new-controls --include-baseline
+python tools/build_k_balance_examples.py --workflow path/to/workflow.json --output strong-controls --include-baseline --blocks "0,1,2,22,24,26,30,31,40,41" --strength 2 --max-change 0.3
 ```
 
 API JSONまたはUI 0.4 JSONから、baseline、identity、compress、reverseを作ります。
@@ -82,7 +115,8 @@ API JSONまたはUI 0.4 JSONから、baseline、identity、compress、reverseを
 
 ## 開発時の検証
 
-数値と試験件数は [検証記録](k-row-balance-validation.md) にまとめています。
+現在の数値と試験件数は [v2検証記録](k-row-balance-multi-validation.md) にまとめています。
+初版の結果は [旧検証記録](k-row-balance-validation.md) として保持しています。
 
 CPU上の実際のComfyUIコアを使い、量子化Linear、V3登録、Q/V出力の保持、
 native ModelPatcherのapply/unpatch、variant切替と非累積を検査します。
@@ -99,6 +133,7 @@ python -m pytest -q
 
 ```powershell
 python tools/probe_k_row_balance.py --comfy-root path/to/ComfyUI --checkpoint path/to/model.safetensors --output new-probe
+python tools/probe_k_row_balance.py --comfy-root path/to/ComfyUI --checkpoint path/to/model.safetensors --output multi-probe --blocks "0,1,2,22,24,26,30,31,40,41" --strength 2 --max-change 0.3
 ```
 
 元モデルの前後hash、コードとQ/Vのscaleの一致、数値変化、CPU projectionの出力を記録します。

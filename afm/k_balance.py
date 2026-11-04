@@ -1,4 +1,4 @@
-"""Reversible block-41 K-row scale edits for canonical native INT8 MOSS."""
+"""Reversible selected-block K-row scale edits for native INT8 MOSS."""
 
 import json
 import uuid
@@ -6,12 +6,47 @@ import uuid
 import torch
 
 from .k_balance_math import KBalanceConfig, compute_k_gains
+from .config import parse_block_scope
 
 
 TARGET_MODULE = "diffusion_model.layers.41.proj.qkv"
 TARGET_WEIGHT = TARGET_MODULE + ".weight"
 CONFIG_KEY = "moss_k_row_balance"
 ATTACHMENT_PREFIX = "moss_k_row_balance:"
+DEFAULT_BLOCKS = "41"
+
+
+def parse_k_blocks(blocks):
+    if not isinstance(blocks, str):
+        raise ValueError("blocks must be a comma-separated string of indices/ranges")
+    return tuple(sorted(parse_block_scope(blocks, 42)))
+
+
+def target_module_path(block_index):
+    if type(block_index) is not int or not 0 <= block_index < 42:
+        raise ValueError("block index must be in 0..41")
+    return f"diffusion_model.layers.{block_index}.proj.qkv"
+
+
+def _patcher_type(model):
+    return f"{type(model).__module__}.{type(model).__qualname__}"
+
+
+def _resolve_patcher(model):
+    from comfy.model_patcher import ModelPatcher
+
+    if not isinstance(model, ModelPatcher):
+        raise ValueError(f"Unsupported K Row Balance patcher: {_patcher_type(model)}")
+    if not model.is_dynamic():
+        return model, False
+    delegate = getattr(model, "get_non_dynamic_delegate", None)
+    if not callable(delegate):
+        raise ValueError(f"{_patcher_type(model)} lacks the native non-dynamic delegate API")
+    # Native API caches the reloaded model. Loader/OOM failures must propagate.
+    standard = delegate()
+    if not isinstance(standard, ModelPatcher) or standard.is_dynamic():
+        raise ValueError("Native delegate did not return a non-dynamic ModelPatcher")
+    return standard, True
 
 
 def _canonical_state(module):
@@ -76,7 +111,7 @@ def _canonical_state(module):
     return {key: value.detach().to(device="cpu", copy=True) for key, value in state.items()}
 
 
-def balance_projection(module, config: KBalanceConfig, head_dim: int, device):
+def balance_projection(module, config: KBalanceConfig, head_dim: int, device, block_index=41):
     """Build one independent native Linear; never call a requantizing setter."""
     state = _canonical_state(module)
     dim = module.in_features
@@ -100,7 +135,7 @@ def balance_projection(module, config: KBalanceConfig, head_dim: int, device):
         raise RuntimeError("Native reconstruction changed INT8 codes or Q/V scales")
     report.update({
         "status": "rebuild_control" if config.bypass else "edited",
-        "block_index": 41, "scope": "K_weight_row_scale_only",
+        "block_index": block_index, "scope": "K_weight_row_scale_only",
         "quantized_codes_unchanged": codes_same, "qv_scales_unchanged": qv_same,
         "convrot_groupsize": module.weight._params.convrot_groupsize,
         "compute_dtype": str(module.weight.dtype),
@@ -117,17 +152,17 @@ def balance_projection(module, config: KBalanceConfig, head_dim: int, device):
     return replacement, report
 
 
-def _overlaps_target(path):
-    return (path == TARGET_MODULE or path.startswith(TARGET_MODULE + ".")
-            or TARGET_MODULE.startswith(path + "."))
+def _overlaps_target(path, target):
+    return (path == target or path.startswith(target + ".")
+            or target.startswith(path + "."))
 
 
-def _reject_conflicts(model):
+def _reject_conflicts(model, targets):
     options = model.model_options.get("transformer_options", {})
     if any(key.startswith(ATTACHMENT_PREFIX) for key in model.attachments):
         raise ValueError("K Row Balance is already applied; use the original input MODEL")
     for patches in (model.patches, model.weight_wrapper_patches, model.object_patches):
-        if any(_overlaps_target(key) for key in patches):
+        if any(_overlaps_target(key, target) for key in patches for target in targets):
             raise ValueError("An existing target weight/object patch conflicts with K Row Balance")
     if model.hook_patches or model.current_hooks is not None or model.forced_hooks is not None:
         raise ValueError("Existing model hooks are not qualified for K Row Balance")
@@ -141,42 +176,83 @@ def _reject_conflicts(model):
         raise ValueError("Compile/cache/multi-GPU models are not qualified for K Row Balance")
 
 
-def _attach_replacement(model, replacement, report):
+def _attach_replacements(model, replacements, report):
     clone = model.clone()
-    clone.add_object_patch(TARGET_MODULE, replacement)
+    for target, replacement in replacements.items():
+        clone.add_object_patch(target, replacement)
     token = uuid.uuid4()
     # partially_load compares this UUID; object replacement alone does not change it.
     clone.patches_uuid = token
     # clone_has_same_weights otherwise ignores object_patches when patches is empty.
     clone.set_attachments(ATTACHMENT_PREFIX + token.hex, dict(report))
     clone.model_options.setdefault("transformer_options", {})[CONFIG_KEY] = {
-        "block_index": 41, "strength": report["strength"], "max_change": report["max_change"]}
+        "block_indices": report.get("block_indices", [report["block_index"]]),
+        "strength": report["strength"], "max_change": report["max_change"]}
     return clone
 
 
-def install_k_balance(model, config: KBalanceConfig):
+def install_k_balance(model, config: KBalanceConfig, blocks=DEFAULT_BLOCKS):
     if not isinstance(config, KBalanceConfig):
         raise ValueError("Expected KBalanceConfig")
+    selected = parse_k_blocks(blocks)
+    input_type = _patcher_type(model)
     if config.strength == 0:
-        return model.clone(), {"status": "bypass", "block_index": 41,
+        return model.clone(), {"status": "bypass", "block_index": selected[0] if len(selected) == 1 else None,
+                               "block_indices": list(selected), "implementation_version": 2,
                                "strength": float(config.strength),
                                "max_change": float(config.max_change), "changed_rows": 0,
+                               "input_patcher_type": input_type, "effective_patcher_type": input_type,
+                               "dynamic_delegate_used": False,
                                "checkpoint_written": False, "image_quality_effect": "unverified"}
     from comfy.model_patcher import ModelPatcher
     from .adapter import detect_native_moss
 
-    if type(model) is not ModelPatcher or model.is_dynamic():
-        raise ValueError("K Row Balance currently requires the standard ModelPatcher")
-    _reject_conflicts(model)
-    caps = detect_native_moss(model)
+    if not isinstance(model, ModelPatcher):
+        raise ValueError(f"Unsupported K Row Balance patcher: {input_type}")
+    targets = [target_module_path(index) for index in selected]
+    _reject_conflicts(model, targets)
+    working, delegated = _resolve_patcher(model)
+    _reject_conflicts(working, targets)
+    caps = detect_native_moss(working)
     if (caps.blocks, caps.heads, caps.head_dim, caps.latent_channels) != (42, 24, 128, 128):
         raise ValueError("K Row Balance requires native 42-block, 3072-dim/24-head MOSS geometry")
-    try:
-        module = model.get_model_object(TARGET_MODULE)
-    except AttributeError as error:
-        raise ValueError("K Row Balance requires fused QKV in native block 41") from error
-    if (module.in_features != 3072 or module.out_features != 9216
-            or getattr(getattr(module.weight, "_params", None), "convrot_groupsize", None) != 256):
-        raise ValueError("K Row Balance requires canonical fused 3072-dim QKV with group256")
-    replacement, report = balance_projection(module, config, caps.head_dim, model.offload_device)
-    return _attach_replacement(model, replacement, report), report
+    replacements, reports = {}, []
+    retained, peak = 0, 0
+    for index, target in zip(selected, targets):
+        try:
+            module = working.get_model_object(target)
+        except AttributeError as error:
+            raise ValueError(f"Block {index}: K Row Balance requires fused QKV") from error
+        if (module.in_features != 3072 or module.out_features != 9216
+                or getattr(getattr(module.weight, "_params", None), "convrot_groupsize", None) != 256):
+            raise ValueError(f"Block {index}: requires canonical fused 3072-dim QKV with group256")
+        try:
+            replacement, row = balance_projection(module, config, caps.head_dim,
+                                                   working.offload_device, block_index=index)
+        except (ValueError, FloatingPointError) as error:
+            raise type(error)(f"Block {index}: {error}") from error
+        replacements[target] = replacement
+        reports.append(row)
+        peak = max(peak, retained + row["estimated_peak_working_bytes"])
+        retained += row["additional_projection_storage_bytes"]
+    report = dict(reports[0]) if len(reports) == 1 else {
+        "status": "rebuild_control" if config.bypass else "edited", "block_index": None,
+        "scope": "K_weight_row_scale_only", "strength": float(config.strength),
+        "max_change": float(config.max_change), "checkpoint_written": False,
+        "image_quality_effect": "unverified",
+    }
+    clipped = sum(row["clipped_rows"] for row in reports)
+    report.update({
+        "implementation_version": 2, "block_indices": list(selected), "block_reports": reports,
+        "input_patcher_type": input_type, "effective_patcher_type": _patcher_type(working),
+        "dynamic_delegate_used": delegated,
+        "changed_rows": sum(row["changed_rows"] for row in reports),
+        "clipped_rows": clipped, "clipped_fraction": clipped / sum(row["rows"] for row in reports),
+        "gain_min": min(row["gain_min"] for row in reports),
+        "gain_max": max(row["gain_max"] for row in reports),
+        "additional_projection_storage_bytes": retained, "estimated_peak_working_bytes": peak,
+        "memory_estimate_scope": "replacement construction only; excludes native delegate/model/forward workspace",
+        "quantized_codes_unchanged": all(row["quantized_codes_unchanged"] for row in reports),
+        "qv_scales_unchanged": all(row["qv_scales_unchanged"] for row in reports),
+    })
+    return _attach_replacements(working, replacements, report), report

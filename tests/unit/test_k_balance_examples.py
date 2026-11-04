@@ -88,6 +88,7 @@ class BuildKBalanceExamplesTests(unittest.TestCase):
                 "model": ["10", 0],
                 "strength": settings[name][0],
                 "max_change": settings[name][1],
+                "blocks": "41",
             })
             self.assertEqual(generated["12"]["inputs"]["model"], ["16", 0])
             for node_id in ("10", "11", "13", "15"):
@@ -117,7 +118,7 @@ class BuildKBalanceExamplesTests(unittest.TestCase):
         node = next(node for node in generated["nodes"] if node["id"] == 15)
         self.assertEqual(node["type"], "MossImageKRowBalance")
         self.assertEqual(node["mode"], 0)
-        self.assertEqual(node["widgets_values"], [1.0, 0.03])
+        self.assertEqual(node["widgets_values"], [1.0, 0.03, "41"])
         self.assertEqual(node["inputs"], [{"name": "model", "type": "MODEL", "link": 6}])
         self.assertEqual(node["outputs"], [
             {"name": "MODEL", "type": "MODEL", "links": [7], "slot_index": 0},
@@ -140,7 +141,37 @@ class BuildKBalanceExamplesTests(unittest.TestCase):
     def test_ui_rebuild_control_uses_nonzero_strength_and_zero_cap(self):
         generated = build_variants(ui_workflow())["rebuild_control"]
         node = next(node for node in generated["nodes"] if node["id"] == 15)
-        self.assertEqual(node["widgets_values"], [1.0, 0.0])
+        self.assertEqual(node["widgets_values"], [1.0, 0.0, "41"])
+
+    def test_custom_scope_strength_and_cap_drive_all_variants(self):
+        blocks = "0-2,22,24,26,30-31,40-41"
+        variants = build_variants(
+            api_workflow(), blocks=blocks, strength=7.5, max_change=0.4
+        )
+        expected = {
+            "identity": (0.0, 0.4),
+            "rebuild_control": (7.5, 0.0),
+            "compress": (7.5, 0.4),
+            "reverse": (-7.5, 0.4),
+        }
+        for name, generated in variants.items():
+            inputs = generated["16"]["inputs"]
+            self.assertEqual(inputs["blocks"], blocks)
+            self.assertEqual((inputs["strength"], inputs["max_change"]), expected[name])
+
+    def test_rejects_invalid_custom_settings_before_building(self):
+        cases = (
+            {"blocks": "42"},
+            {"blocks": "2-1"},
+            {"strength": -1.0},
+            {"strength": 10.1},
+            {"max_change": -0.01},
+            {"max_change": 0.951},
+        )
+        for options in cases:
+            with self.subTest(options=options):
+                with self.assertRaises(ValueError):
+                    build_variants(api_workflow(), **options)
 
     def test_rejects_malformed_or_ambiguous_workflows(self):
         cases = []
@@ -200,6 +231,9 @@ class BuildKBalanceExamplesTests(unittest.TestCase):
                 manifest["source"]["sha256"], hashlib.sha256(source_bytes).hexdigest()
             )
             self.assertEqual(manifest["scope"], "fixed block 41 INT8 K-scale correction")
+            self.assertEqual(manifest["settings"], {
+                "blocks": "41", "strength": 1.0, "max_change": 0.03,
+            })
             self.assertEqual(manifest["quality"], "actual quality unverified")
             self.assertEqual(
                 set(manifest["variants"]),
@@ -211,6 +245,7 @@ class BuildKBalanceExamplesTests(unittest.TestCase):
                     "file": "moss_k_balance_rebuild_control_api.json",
                     "strength": 1.0,
                     "max_change": 0.0,
+                    "blocks": "41",
                 },
             )
             for filename, digest in manifest["files"].items():
@@ -226,6 +261,37 @@ class BuildKBalanceExamplesTests(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("--output", result.stderr)
+
+    def test_write_examples_and_cli_record_requested_settings(self):
+        source = api_workflow()
+        source_bytes = json.dumps(source).encode("utf-8")
+        blocks = "0,1,2,22,24,26,30,31,40,41"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workflow_path = root / "source.json"
+            workflow_path.write_bytes(source_bytes)
+            output = root / "generated"
+            result = subprocess.run(
+                [
+                    sys.executable, str(ROOT / "tools/build_k_balance_examples.py"),
+                    "--workflow", str(workflow_path), "--output", str(output),
+                    "--blocks", blocks, "--strength", "8", "--max-change", "0.5",
+                ],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["settings"], {
+                "blocks": blocks, "strength": 8.0, "max_change": 0.5,
+            })
+            self.assertEqual(manifest["scope"], f"selected blocks {blocks} INT8 K-scale correction")
+            generated = json.loads(
+                (output / "moss_k_balance_reverse_api.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(generated["16"]["inputs"], {
+                "model": ["10", 0], "strength": -8.0,
+                "max_change": 0.5, "blocks": blocks,
+            })
 
 
 if __name__ == "__main__":

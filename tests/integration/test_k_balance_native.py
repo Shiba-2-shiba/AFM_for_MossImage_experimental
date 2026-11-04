@@ -45,13 +45,14 @@ class KBalanceNativeTests(unittest.TestCase):
         module._full_precision_mm = full_precision
         return module
 
-    def model(self, large=True):
+    def model(self, large=True, blocks=(41,)):
         dim, heads, ffn, device = (3072, 24, 8192, "meta") if large else (8, 2, 16, "cpu")
         native = self.native_class(dim=dim, ffn_dim=ffn, num_heads=heads, num_layers=42,
                                    text_dim=16, latent_channels=128, fused_qkv=True,
                                    device=device, dtype=torch.float32,
                                    operations=self.ops.disable_weight_init)
-        native.layers[41].proj["qkv"] = self.linear(dim, 256 if large else 4)
+        for block in blocks:
+            native.layers[block].proj["qkv"] = self.linear(dim, 256 if large else 4)
         base = torch.nn.Module()
         base.diffusion_model = native
         return self.patcher_class(base, torch.device("cpu"), torch.device("cpu"), size=1)
@@ -254,12 +255,12 @@ class KBalanceNativeTests(unittest.TestCase):
                     install_k_balance(other, KBalanceConfig(1))
 
     def test_small_cpu_patcher_switch_reloads_correct_variant(self):
-        from afm.k_balance import TARGET_MODULE, _attach_replacement, balance_projection
+        from afm.k_balance import TARGET_MODULE, _attach_replacements, balance_projection
         from afm.k_balance_math import KBalanceConfig
         base = self.model(large=False)
         original = base.get_model_object(TARGET_MODULE)
         changed, report = balance_projection(original, KBalanceConfig(1), 4, torch.device("cpu"))
-        edited = _attach_replacement(base, changed, report)
+        edited = _attach_replacements(base, {TARGET_MODULE: changed}, report)
         base.partially_load(torch.device("cpu"), extra_memory=10**9)
         self.assertEqual(base.model.current_weight_patches_uuid, base.patches_uuid)
         edited.partially_load(torch.device("cpu"), extra_memory=10**9)
@@ -283,10 +284,142 @@ class KBalanceNativeTests(unittest.TestCase):
         self.assertEqual(len(found), 1)
         node = found[0]
         schema = node.define_schema()
-        self.assertEqual([n.id for n in schema.inputs], ["model", "strength", "max_change"])
+        self.assertEqual([n.id for n in schema.inputs], ["model", "strength", "max_change", "blocks"])
+        self.assertEqual((schema.inputs[1].min, schema.inputs[1].max), (-10, 10))
+        self.assertEqual(schema.inputs[2].max, .95)
+        self.assertEqual(schema.inputs[3].default, "41")
         self.assertEqual([n.get_io_type() for n in schema.outputs], ["MODEL", "STRING"])
         base = self.model(large=False)
         result = node.execute(base).result
         self.assertEqual(len(result), 2)
         self.assertEqual(json.loads(result[1])["status"], "bypass")
         self.assertEqual(result[0].object_patches, {})
+
+    def test_normal_patcher_subclass_is_supported(self):
+        from afm.k_balance import install_k_balance
+        from afm.k_balance_math import KBalanceConfig
+        class Derived(self.patcher_class):
+            pass
+        base = self.model()
+        derived = Derived(base.model, base.load_device, base.offload_device, size=1)
+        edited, report = install_k_balance(derived, KBalanceConfig(2, .3))
+        self.assertIsInstance(edited, Derived)
+        self.assertFalse(report["dynamic_delegate_used"])
+        self.assertEqual(report["block_indices"], [41])
+
+    def test_native_dynamic_delegate_contract_in_cpu_harness(self):
+        from comfy.model_patcher import ModelPatcherDynamic
+        from afm.k_balance import install_k_balance, TARGET_MODULE
+        from afm.k_balance_math import KBalanceConfig
+        # Actual native delegate/clone methods; bypass only GPU-specific construction.
+        class Harness(self.patcher_class):
+            def is_dynamic(self):
+                return True
+            get_non_dynamic_delegate = ModelPatcherDynamic.get_non_dynamic_delegate
+        base = self.model()
+        dynamic = Harness(base.model, base.load_device, base.offload_device, size=1)
+        dynamic.non_dynamic_delegate_model = None
+        reloads = []
+        def reload_model(disable_dynamic=False):
+            self.assertTrue(disable_dynamic)
+            reloads.append(disable_dynamic)
+            return self.model()
+        dynamic.cached_patcher_init = (reload_model, ())
+        dynamic.model_options["test_option"] = "preserve"
+        zero, zero_report = install_k_balance(dynamic, KBalanceConfig())
+        self.assertEqual(reloads, [])
+        first, report = install_k_balance(dynamic, KBalanceConfig(2, .3))
+        self.assertFalse(first.is_dynamic())
+        self.assertTrue(report["dynamic_delegate_used"])
+        self.assertEqual(first.model_options["test_option"], "preserve")
+        original = first.get_model_object(TARGET_MODULE)
+        first.patch_model(load_weights=False)
+        second, second_report = install_k_balance(dynamic, KBalanceConfig(-2, .3))
+        self.assertEqual(len(reloads), 1)
+        self.assertIs(first.model, second.model)
+        self.assertEqual(second_report["block_indices"], [41])
+        first.unpatch_model(unpatch_weights=False)
+        self.assertEqual(dynamic.object_patches, {})
+        self.assertIsNot(second.get_model_object(TARGET_MODULE), original)
+
+    def test_dynamic_without_loader_keeps_clear_failure(self):
+        from comfy.model_patcher import ModelPatcherDynamic
+        from afm.k_balance import install_k_balance
+        from afm.k_balance_math import KBalanceConfig
+        class Harness(self.patcher_class):
+            def is_dynamic(self):
+                return True
+            get_non_dynamic_delegate = ModelPatcherDynamic.get_non_dynamic_delegate
+        base = self.model()
+        dynamic = Harness(base.model, base.load_device, base.offload_device, size=1)
+        dynamic.non_dynamic_delegate_model = None
+        with self.assertRaisesRegex(RuntimeError, "cached_patcher_init"):
+            install_k_balance(dynamic, KBalanceConfig(1))
+        self.assertEqual(dynamic.object_patches, {})
+
+    def test_selected_blocks_only_and_atomic_failure(self):
+        from afm.k_balance import install_k_balance, target_module_path
+        from afm.k_balance_math import KBalanceConfig
+        base = self.model(blocks=(0, 22, 41))
+        originals = {i: base.get_model_object(target_module_path(i)) for i in (0, 22, 41)}
+        edited, report = install_k_balance(base, KBalanceConfig(2, .3), blocks="0,22")
+        self.assertEqual(set(edited.object_patches), {target_module_path(0), target_module_path(22)})
+        self.assertEqual(report["block_indices"], [0, 22])
+        self.assertEqual([r["block_index"] for r in report["block_reports"]], [0, 22])
+        edited.patch_model(load_weights=False)
+        self.assertIs(base.model.diffusion_model.layers[41].proj["qkv"], originals[41])
+        edited.unpatch_model(unpatch_weights=False)
+        for i, module in originals.items():
+            self.assertIs(base.get_model_object(target_module_path(i)), module)
+        handle = originals[22].register_forward_hook(lambda m, a, out: out)
+        try:
+            with self.assertRaisesRegex(ValueError, "[Bb]lock 22.*hook"):
+                install_k_balance(base, KBalanceConfig(2, .3), blocks="0,22")
+            self.assertEqual(base.object_patches, {})
+            self.assertIs(base.model.diffusion_model.layers[0].proj["qkv"], originals[0])
+        finally:
+            handle.remove()
+
+    def test_conflict_checks_cover_selected_non41_blocks(self):
+        from afm.k_balance import install_k_balance, target_module_path
+        from afm.k_balance_math import KBalanceConfig
+        base = self.model(blocks=(0, 41))
+        base.add_weight_wrapper(target_module_path(0) + ".weight", lambda x: x)
+        with self.assertRaisesRegex(ValueError, "conflict"):
+            install_k_balance(base, KBalanceConfig(1, .3), blocks="0")
+
+    def test_all_ten_requested_blocks_apply_and_restore_together(self):
+        from afm.k_balance import install_k_balance, target_module_path
+        from afm.k_balance_math import KBalanceConfig
+        wanted = (0, 1, 2, 22, 24, 26, 30, 31, 40, 41)
+        base = self.model(blocks=wanted)
+        originals = {i: base.get_model_object(target_module_path(i)) for i in wanted}
+        unselected = base.model.diffusion_model.layers[3].proj["qkv"]
+        edited, report = install_k_balance(base, KBalanceConfig(2, .3),
+                                           blocks=",".join(map(str, wanted)))
+        self.assertEqual(report["block_indices"], list(wanted))
+        self.assertEqual(len(edited.object_patches), 10)
+        self.assertTrue(report["quantized_codes_unchanged"])
+        self.assertTrue(report["qv_scales_unchanged"])
+        edited.patch_model(load_weights=False)
+        for i, original in originals.items():
+            self.assertIsNot(base.model.diffusion_model.layers[i].proj["qkv"], original)
+        self.assertIs(base.model.diffusion_model.layers[3].proj["qkv"], unselected)
+        edited.unpatch_model(unpatch_weights=False)
+        for i, original in originals.items():
+            self.assertIs(base.model.diffusion_model.layers[i].proj["qkv"], original)
+
+    def test_selection_parser_requested_list_and_legacy_zero(self):
+        from afm.k_balance import parse_k_blocks, install_k_balance
+        from afm.k_balance_math import KBalanceConfig
+        wanted = (0, 1, 2, 22, 24, 26, 30, 31, 40, 41)
+        self.assertEqual(parse_k_blocks("0-2,22,24,26,30,31,40,41"), wanted)
+        self.assertEqual(parse_k_blocks("41,0,41"), (0, 41))
+        self.assertEqual(parse_k_blocks("all"), tuple(range(42)))
+        for value in ("", "42", "-1", "2-0", "30.31", None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                parse_k_blocks(value)
+        base = self.model(large=False)
+        zero, report = install_k_balance(base, KBalanceConfig(), blocks="0,41")
+        self.assertEqual(zero.object_patches, {})
+        self.assertEqual(report["block_indices"], [0, 41])

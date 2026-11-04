@@ -1,10 +1,14 @@
 import json
-import math
 import unittest
 
 import torch
 
-from afm.k_balance_math import KBalanceConfig, compute_k_gains
+from afm.k_balance_math import (
+    KBalanceConfig,
+    MAX_CHANGE_LIMIT,
+    STRENGTH_LIMIT,
+    compute_k_gains,
+)
 
 
 def _codes_from_norms(norms: list[int]) -> torch.Tensor:
@@ -14,6 +18,11 @@ def _codes_from_norms(norms: list[int]) -> torch.Tensor:
 class KBalanceMathTests(unittest.TestCase):
     def test_config_validates_controls_and_bypass(self):
         self.assertEqual(KBalanceConfig(), KBalanceConfig(strength=0.0, max_change=0.03))
+        self.assertEqual(KBalanceConfig(1.1, 0.11), KBalanceConfig(strength=1.1, max_change=0.11))
+        self.assertEqual(STRENGTH_LIMIT, 10.0)
+        self.assertEqual(MAX_CHANGE_LIMIT, 0.95)
+        KBalanceConfig(strength=-10.0, max_change=0.95)
+        KBalanceConfig(strength=10.0, max_change=0.3)
         self.assertTrue(KBalanceConfig().bypass)
         self.assertTrue(KBalanceConfig(strength=0.5, max_change=0.0).bypass)
         self.assertFalse(KBalanceConfig(strength=0.5, max_change=0.03).bypass)
@@ -21,12 +30,14 @@ class KBalanceMathTests(unittest.TestCase):
         for kwargs in (
             {"strength": True},
             {"strength": float("nan")},
-            {"strength": -1.01},
-            {"strength": 1.01},
+            {"strength": -10.01},
+            {"strength": 10.01},
             {"max_change": False},
             {"max_change": float("inf")},
             {"max_change": -0.001},
-            {"max_change": 0.101},
+            {"max_change": 0.9501},
+            {"max_change": 1.0},
+            {"max_change": 1.1},
         ):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 KBalanceConfig(**kwargs)
@@ -68,6 +79,70 @@ class KBalanceMathTests(unittest.TestCase):
         self.assertAlmostEqual(report["gain_min"], 0.97, places=6)
         self.assertAlmostEqual(report["gain_max"], 1.03, places=6)
 
+    def test_gains_are_strictly_positive_and_bounded_by_thirty_percent(self):
+        gains, _ = compute_k_gains(
+            _codes_from_norms([1, 2, 4, 8]),
+            torch.ones(4, 1, dtype=torch.float32),
+            4,
+            KBalanceConfig(strength=10.0, max_change=0.3),
+        )
+
+        self.assertTrue(torch.all(torch.isfinite(gains)))
+        self.assertTrue(torch.all(gains > 0))
+        self.assertGreaterEqual(float(gains.min()), float(torch.tensor(0.7, dtype=torch.float32)))
+        self.assertLessEqual(float(gains.max()), float(torch.tensor(1.3, dtype=torch.float32)))
+
+    def test_tighter_cap_increases_clipped_rows(self):
+        codes = _codes_from_norms([1, 2, 4, 8])
+        scales = torch.ones(4, 1, dtype=torch.float32)
+
+        _, tight_report = compute_k_gains(
+            codes, scales, 4, KBalanceConfig(strength=1.0, max_change=0.03)
+        )
+        _, loose_report = compute_k_gains(
+            codes, scales, 4, KBalanceConfig(strength=1.0, max_change=0.3)
+        )
+
+        self.assertEqual(tight_report["clipped_rows"], 4)
+        self.assertEqual(tight_report["clipped_fraction"], 1.0)
+        self.assertEqual(loose_report["clipped_rows"], 3)
+        self.assertEqual(loose_report["clipped_fraction"], 0.75)
+
+    def test_extreme_strengths_produce_finite_cap_bounded_gains(self):
+        codes = _codes_from_norms([1, 2, 4, 8])
+        scales = torch.ones(4, 1, dtype=torch.float32)
+
+        for strength in (-10.0, 10.0):
+            with self.subTest(strength=strength):
+                gains, _ = compute_k_gains(
+                    codes,
+                    scales,
+                    4,
+                    KBalanceConfig(strength=strength, max_change=0.95),
+                )
+                self.assertTrue(torch.all(torch.isfinite(gains)))
+                self.assertTrue(torch.all(gains > 0))
+                self.assertGreaterEqual(
+                    float(gains.min()), float(torch.tensor(0.05, dtype=torch.float32))
+                )
+                self.assertLessEqual(
+                    float(gains.max()), float(torch.tensor(1.95, dtype=torch.float32))
+                )
+
+    def test_strength_above_one_is_not_silently_clamped(self):
+        gains, _ = compute_k_gains(
+            _codes_from_norms([100, 101, 102, 103]),
+            torch.ones(4, 1, dtype=torch.float32),
+            4,
+            KBalanceConfig(strength=2.0, max_change=0.95),
+        )
+
+        expected = torch.tensor(
+            [[1.015**2], [(1.015 / 1.01) ** 2], [(1.015 / 1.02) ** 2], [(1.015 / 1.03) ** 2]],
+            dtype=torch.float32,
+        )
+        torch.testing.assert_close(gains, expected, rtol=1e-6, atol=1e-7)
+
     def test_zero_strength_and_zero_cap_return_exact_identity_without_mutation(self):
         codes = _codes_from_norms([1, 2, 3, 4])
         scales = torch.tensor([[1.0], [2.0], [3.0], [4.0]], dtype=torch.float32)
@@ -79,6 +154,8 @@ class KBalanceMathTests(unittest.TestCase):
                 gains, report = compute_k_gains(codes, scales, 2, config)
                 torch.testing.assert_close(gains, torch.ones_like(gains), rtol=0, atol=0)
                 self.assertEqual(report["changed_rows"], 0)
+                self.assertEqual(report["clipped_rows"], 0)
+                self.assertEqual(report["clipped_fraction"], 0.0)
                 self.assertEqual(report["gain_min"], 1.0)
                 self.assertEqual(report["gain_max"], 1.0)
 
@@ -146,6 +223,8 @@ class KBalanceMathTests(unittest.TestCase):
                 "strength",
                 "max_change",
                 "changed_rows",
+                "clipped_rows",
+                "clipped_fraction",
                 "gain_min",
                 "gain_max",
                 "row_p99_over_p50",
