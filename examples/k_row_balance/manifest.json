@@ -1,0 +1,43 @@
+{
+  "source": {
+    "file": "moss_afm_baseline_api.json",
+    "sha256": "1203484b3ebcd7142661ec75ae79328c364615ed9fe7017b89366306d9978b38",
+    "format": "api"
+  },
+  "scope": "fixed block 41 INT8 K-scale correction",
+  "quality": "actual quality unverified",
+  "variants": {
+    "baseline": {
+      "file": "moss_k_balance_baseline_api.json",
+      "strength": null,
+      "max_change": null
+    },
+    "identity": {
+      "file": "moss_k_balance_identity_api.json",
+      "strength": 0.0,
+      "max_change": 0.03
+    },
+    "rebuild_control": {
+      "file": "moss_k_balance_rebuild_control_api.json",
+      "strength": 1.0,
+      "max_change": 0.0
+    },
+    "compress": {
+      "file": "moss_k_balance_compress_api.json",
+      "strength": 1.0,
+      "max_change": 0.03
+    },
+    "reverse": {
+      "file": "moss_k_balance_reverse_api.json",
+      "strength": -1.0,
+      "max_change": 0.03
+    }
+  },
+  "files": {
+    "moss_k_balance_baseline_api.json": "fa050f0d678987caa96d354abbc1e81a73baf008f63bf089296f78ec5fbda5d8",
+    "moss_k_balance_identity_api.json": "33c12f18e26189471ace9b14eab0cfc35fc8599ec842ae047d3e9c5bdac6e0f8",
+    "moss_k_balance_rebuild_control_api.json": "6ea3cf3458a413b4b99fb2be90f651de8722fcd42f062742e92946762d8ad77f",
+    "moss_k_balance_compress_api.json": "8619992c668603d388131a40f0507ab3069a8d3ad4507cf3045592e7575c22cf",
+    "moss_k_balance_reverse_api.json": "3bdf5cef63ad6ca22833bf83e861f1d5d7f9147cdfac602b197ce71368c661a6"
+  }
+}

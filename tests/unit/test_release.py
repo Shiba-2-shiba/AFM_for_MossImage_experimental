@@ -20,6 +20,8 @@ class ReleaseTests(unittest.TestCase):
             with zipfile.ZipFile(paths[0]) as archive:
                 for name in ("nodes.py", "afm/config.py", "tools/smoke_contract.py",
                              "afm/residual.py", "examples/moss_residual_afm_api.json",
+                             "afm/k_balance.py", "afm/k_balance_math.py",
+                             "docs/k-row-balance.md", "tools/build_k_balance_examples.py",
                              "examples/moss_lora_residual_afm_api.json",
                              "examples/moss_afm_edit_api.json", "README.md"):
                     self.assertEqual(archive.read(name), (ROOT / name).read_bytes())

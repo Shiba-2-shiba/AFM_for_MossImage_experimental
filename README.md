@@ -1,8 +1,28 @@
 # MOSS Image AFM for ComfyUI
 
 Experimental Attention Frequency Modulation for native MOSS-Image.
-The node edits image-query/text-key logits on the actual latent grid, followed by
-joint normalization over image and text keys. The model weights are unchanged.
+The AFM node edits image-query/text-key logits on the actual latent grid, followed by
+joint normalization over image and text keys. AFM and Residual leave model weights unchanged.
+The optional K Row Balance experiment changes block-41 K weight row scales in a cloned
+runtime model; it does not write checkpoint files.
+
+## K Row Balance（実験用）
+
+**MOSS Image K Row Balance (Experimental)** を追加しました。
+native MOSSの融合INT8 ConvRotモデルについて、block41のK重みの行ノルムを
+head内で小幅に調整します。INT8コードとQ/Vのscaleを保持し、再量子化を避けます。
+画像品質が改善することは未確認です。
+
+接続は `UNETLoader → MOSS Image K Row Balance → KSampler`。
+`strength=0` は無変更、`+1` は偏りを緩和する試験、`-1` は逆方向の対照です。
+既定の `max_change=0.03` では各K行の倍率を0.97～1.03に制限します。
+`strength=1 / max_change=0` は、重みの数値を変えない再構成対照です。
+初期比較ではResidual・AFM・LoRAを重ねません。
+
+仕様・対応条件・切り戻し・検証範囲は [K Row Balance](docs/k-row-balance.md)、
+API例は [examples/k_row_balance](examples/k_row_balance/) を参照してください。
+API JSONはUIへ読み込む形式ではありません。手元のUI workflowから比較用コピーを
+作るには `tools/build_k_balance_examples.py` を使用します。
 
 ## プリセットと検証状況
 

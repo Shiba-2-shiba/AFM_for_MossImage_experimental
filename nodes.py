@@ -1,8 +1,12 @@
+import json
+
 from comfy_api.latest import ComfyExtension, io
 
 from .afm.adapter import install_afm
 from .afm.config import AFMConfig
 from .afm.residual import ResidualConfig, ResidualTestConfig, install_residual
+from .afm.k_balance import install_k_balance
+from .afm.k_balance_math import KBalanceConfig
 
 
 class MossImageAFM(io.ComfyNode):
@@ -149,6 +153,41 @@ class MossImageResidualTest(io.ComfyNode):
         return io.NodeOutput(install_residual(model, ResidualTestConfig(**multipliers)))
 
 
+class MossImageKRowBalance(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="MossImageKRowBalance", display_name="MOSS Image K Row Balance (Experimental)",
+            category="model/patches/moss_image",
+            description=("Block 41のK重みの行ノルムをhead内で小幅調整する実験ノード。"
+                         "native MOSSの融合INT8 ConvRot限定。画質改善は未確認。"
+                         "最初はResidual/AFM/LoRAを併用せず単独で比較してください。"),
+            inputs=[
+                io.Model.Input("model"),
+                io.Float.Input("strength", default=0.0, min=-1.0, max=1.0, step=0.05,
+                               tooltip="0は入力MODELをcloneするだけ。正はhead内の偏りを緩和、負は逆方向の対照。"),
+                io.Float.Input("max_change", default=0.03, min=0.0, max=0.10, step=0.01,
+                               advanced=True, tooltip="各K行の倍率の変化上限。0.03なら0.97～1.03。"
+                               "strengthが非0で上限0なら、数値を変えない再構成対照。"),
+            ],
+            outputs=[io.Model.Output(), io.String.Output("report", display_name="K balance report")],
+        )
+
+    @classmethod
+    def validate_inputs(cls, strength=None, max_change=None):
+        try:
+            KBalanceConfig(0.0 if strength is None else strength,
+                           0.03 if max_change is None else max_change)
+        except ValueError as exc:
+            return str(exc)
+        return True
+
+    @classmethod
+    def execute(cls, model, strength=0.0, max_change=0.03):
+        result, report = install_k_balance(model, KBalanceConfig(strength, max_change))
+        return io.NodeOutput(result, json.dumps(report, ensure_ascii=False, allow_nan=False))
+
+
 class MossAFMExtension(ComfyExtension):
     async def get_node_list(self):
-        return [MossImageAFM, MossImageResidual, MossImageResidualTest]
+        return [MossImageAFM, MossImageResidual, MossImageResidualTest, MossImageKRowBalance]
