@@ -3,11 +3,12 @@
 `MOSS Image Block Tune Preset` を追加します。カテゴリは `model/patches/moss_image`。
 
 ```text
-Load Diffusion Model → LoRA（任意）→ MOSS Image Block Tune Preset → KSampler
+Load Diffusion Model → LoRA（任意）→ MOSS Image Block Tune Preset → MOSS Image AFM（任意）→ KSampler
 ```
 
-`application=static`でAFMも使う場合は、このノードとKSamplerの間へAFMを接続します。
-時間指定モードはAFMと併用できません。
+全applicationでAFMを併用できます。AFMを使う場合はBlock Tuneの後、KSamplerの前へ接続します。
+時間指定モードではBlock TuneとAFMが1つのサンプラーステップ進行を共有しますが、
+Block Tuneの`application`と、AFMのblock・時間区間・CFG分岐は独立して作用します。
 既存のResidual / Residual Test / K Row Balanceと重ねず、どれかを選んでください。
 `off`は入力モデルのcloneを返し、このプリセットによる追加調整を行いません。
 
@@ -73,10 +74,18 @@ Block強度上書き値を記録します。
 
 | application | 動作 |
 |---|---|
-| `static`（既定） | 従来どおり選択プリセットを常時適用。AFMと併用可能 |
-| `full_run` | 時間比較用の計算経路で、全生成ステップに選択プリセットを適用 |
+| `static`（既定） | 通常使用向け。時間比較用の進行管理を追加せず、選択プリセットを常時適用 |
+| `full_run` | `middle_30_70`との比較用。同じpreset倍率を全ステップへ適用し、時間比較用の進行管理を使用 |
 | `middle_30_70` | 生成進行率0.30～0.70（両端を含む）だけ、選択プリセット全体を適用 |
-| `identity_control` | `full_run`/`middle_30_70`と同じ対象・計算経路を使い、全生成ステップで倍率1.0 |
+| `identity_control` | 時間指定モードと同じ対象・計算経路を使い、Block Tune倍率だけを全ステップで1.0にする対照 |
+
+通常は`static`を使用します。`static`と`full_run`は同じpresetを全ステップへ適用し、
+CPUの浮動小数点ネイティブテストでは数値が一致します。`full_run`は`static`より強い設定でも、
+別のpresetでもありません。違いは`full_run`が中盤限定との比較に必要な進行管理を使う点です。
+
+`identity_control`はBlock Tuneを`off`にする設定とは異なります。`off`はBlock Tuneの
+weight wrapperを追加しませんが、`identity_control`は時間指定条件と同じwrapper対象・
+逆量子化経路を保ったまま倍率を1.0にします。どちらの場合も、後段のAFMはAFM側の設定どおり動作します。
 
 進行率はsigma値ではなく、実行ステップ順の
 `step_index / max(total_steps - 1, 1)`です。25 stepsでは0始まりの8～16、
@@ -88,14 +97,17 @@ Block強度上書き値を記録します。
 
 時間による差を確認するときは、同じpresetで
 `identity_control → full_run → middle_30_70`の順に比較してください。
+AFMを併用する比較では、3条件すべてでAFMのmode・strength・block・時間区間・CFG分岐も固定してください。
 3条件は同じweight wrapper対象と逆量子化経路を使用します。そのため、
 `middle_30_70`の区間外は`identity_control`との比較ができます。一方、倍率1.0でも
 wrapperを使わない元のINT8高速経路とのbitwise一致は保証しません。
 
 時間指定の`full_run` / `middle_30_70` / `identity_control`はEulerとER-SDEの
-テキストからの生成に限定します。AFMとの併用、参照画像入力には対応しません。
+テキストからの生成に限定します。AFMとは併用できますが、参照画像入力には対応しません。
 動的ModelPatcherはComfyUIのネイティブ非動的delegateへ移してから実行するため、
 初回にモデル再読み込みやメモリ使用量の変化が生じる場合があります。
+このためGPUのINT8実行では`static`と`full_run`のbitwise一致を前提にせず、
+時間比較は`identity_control` / `full_run` / `middle_30_70`の3条件内で評価してください。
 従来の`static`は時間用wrapperを追加せず、既存どおりAFMの前へ接続できます。
 
 ## 数値と適用方法
@@ -135,6 +147,9 @@ INT8などでは、対象のprojectionを計算時に逆量子化して倍率を
 `flux2-vae.safetensors`、16:9、25 steps、CFG 2.5、固定seedを保持しています。
 従来の`moss_block_tune_image_1_*` / `moss_block_tune_image_2_*`は古い独立例であり、
 small VAEを使う元設定を保持しています。今回の32組の比較条件には使いません。
+中盤限定Block TuneとAFMを正しい順序で接続した例は
+`examples/moss_block_tune_middle_afm_ui.json`と
+`examples/moss_block_tune_middle_afm_api.json`です。
 既存例のモデル名・追加ノードはそのままなので、使用環境に合わせて変更してください。
 既存のインストール先が別ディレクトリなら、今回の変更を含むパッケージをそこへ反映し、
 ComfyUIを再起動してノードを読み込んでください。

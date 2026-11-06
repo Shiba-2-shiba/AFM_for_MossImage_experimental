@@ -208,7 +208,7 @@ class MossImageBlockTunePreset(io.ComfyNode):
         return io.Schema(
             node_id="MossImageBlockTunePreset", display_name="MOSS Image Block Tune Preset",
             category="model/patches/moss_image",
-            description="画像①・②・③と質感検証プリセット。LoRAの後へ接続。時間指定モードはAFM併用不可。",
+            description="画像①・②・③と質感検証プリセット。LoRA → Block Tune → AFMの順に接続。全モードAFM併用可能。",
             inputs=[
                 io.Model.Input("model"),
                 io.Combo.Input("preset", options=["off", *PRESET_NAMES], default=PRESET_NAMES[0],
@@ -218,10 +218,12 @@ class MossImageBlockTunePreset(io.ComfyNode):
                                        "③partialは見えていない値とHeadを1.00で補完。"),
                 io.Combo.Input("application", options=list(APPLICATION_MODES), default="static",
                                optional=True,
-                               tooltip="static=従来の全区間適用。full_run=時間比較用の全区間。"
+                               display_name="適用区間／比較モード",
+                               tooltip="通常はstatic（常時適用）。full_runも全ステップに同じ倍率を適用し、"
+                                       "中盤限定との比較用に進行管理を使います。強さの違いではありません。"
                                        "middle_30_70=生成進行率0.30〜0.70だけ適用。"
-                                       "identity_control=同じ計算経路で倍率変更なし。"
-                                       "時間比較はEuler/ER-SDE、参照画像なし、AFMなしで使用。"),
+                                       "identity_control=Block Tuneの倍率変更なしの対照（AFMは独立して動作）。"
+                                       "全モードAFM併用可能。static以外はEuler/ER-SDE、参照画像なしで使用。"),
             ],
             outputs=[io.Model.Output(), io.String.Output("report")],
         )

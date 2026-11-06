@@ -174,7 +174,8 @@ def install_block_tune(model, preset=PRESET_NAMES[0], application='static'):
             'inclusive': True, 'progress': 'step_index / max(total_steps - 1, 1)',
             'identity_control': application == 'identity_control',
             'outside_window': 'identity multipliers with the same weight-wrapper backend',
-            'afm_compatible': False, 'reference_images_supported': False,
+            'afm_compatible': True, 'afm_order': 'Block Tune -> AFM',
+            'reference_images_supported': False,
         }
     if 'experiment' in data:
         report['experiment'] = data['experiment']

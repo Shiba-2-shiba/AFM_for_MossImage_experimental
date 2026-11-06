@@ -157,14 +157,20 @@ class BlockTuneNativeTests(unittest.TestCase):
         self.assertEqual(reloads, [True])
         self.assertFalse(dynamic.weight_wrapper_patches)
 
-    def test_timed_afm_conflict_and_invalid_application_are_explicit(self):
+    def test_timed_afm_shares_one_clock_and_rejects_duplicate_tune(self):
         from afm.block_tune import install_block_tune
         from afm.adapter import install_afm
         from afm.config import AFMConfig
+        from comfy.patcher_extension import WrappersMP
         base = self.model(True, num_layers=42)
         timed, _ = install_block_tune(base, 'image_2_global_qkv', 'middle_30_70')
-        with self.assertRaises(ValueError):
-            install_afm(timed, AFMConfig(logging='off'))
+        original_outer = timed.get_all_wrappers(WrappersMP.OUTER_SAMPLE)
+        original_diffusion = timed.get_all_wrappers(WrappersMP.DIFFUSION_MODEL)
+        combined = install_afm(timed, AFMConfig(logging='off'))
+        self.assertEqual(len(combined.get_all_wrappers(WrappersMP.OUTER_SAMPLE)), 1)
+        self.assertEqual(len(combined.get_all_wrappers(WrappersMP.DIFFUSION_MODEL)), 2)
+        self.assertEqual(timed.get_all_wrappers(WrappersMP.OUTER_SAMPLE), original_outer)
+        self.assertEqual(timed.get_all_wrappers(WrappersMP.DIFFUSION_MODEL), original_diffusion)
         with self.assertRaises(ValueError):
             install_block_tune(timed)
         with self.assertRaises(ValueError):
@@ -178,6 +184,67 @@ class BlockTuneNativeTests(unittest.TestCase):
                     base.model_options['transformer_options'])
         with self.assertRaises(ValueError):
             install_block_tune(base)
+
+    def test_afm_does_not_accept_incomplete_or_foreign_window_wrappers(self):
+        from afm.block_tune import install_block_tune
+        from afm.adapter import install_afm
+        from afm.config import AFMConfig
+        from comfy.patcher_extension import WrappersMP, add_wrapper
+        timed, _ = install_block_tune(self.model(True, num_layers=42),
+                                      'image_2_global_qkv', 'middle_30_70')
+        for case in ('missing_diffusion', 'missing_clock', 'missing_registration',
+                     'fake_registration', 'extra_clock', 'extra_diffusion',
+                     'legacy_clock', 'legacy_diffusion', 'replaced_clock'):
+            with self.subTest(case=case):
+                model = timed.clone()
+                key = 'moss_block_tune_window'
+                passthrough = lambda executor, *args, **kwargs: executor(*args, **kwargs)
+                if case == 'missing_diffusion':
+                    model.remove_wrappers_with_key(WrappersMP.DIFFUSION_MODEL, key)
+                elif case == 'missing_clock':
+                    model.remove_wrappers_with_key(WrappersMP.OUTER_SAMPLE, key)
+                elif case == 'missing_registration':
+                    model.remove_attachments(key)
+                elif case == 'fake_registration':
+                    model.set_attachments(key, object())
+                elif case.startswith('legacy_'):
+                    kind = WrappersMP.OUTER_SAMPLE if case == 'legacy_clock' else WrappersMP.DIFFUSION_MODEL
+                    add_wrapper(kind, passthrough, model.model_options['transformer_options'])
+                else:
+                    kind = WrappersMP.OUTER_SAMPLE if case != 'extra_diffusion' else WrappersMP.DIFFUSION_MODEL
+                    if case == 'replaced_clock':
+                        model.remove_wrappers_with_key(kind, key)
+                    model.add_wrapper_with_key(kind, key if case == 'replaced_clock' else 'foreign',
+                                               passthrough)
+                with self.assertRaises(ValueError):
+                    install_afm(model, AFMConfig(logging='off'))
+
+    def test_combined_example_uses_current_node_schema_and_connects_to_sampler(self):
+        import json
+        from pathlib import Path
+        from comfy.patcher_extension import WrappersMP
+        root = Path(__file__).resolve().parents[2]
+        api_path = root / 'examples/moss_block_tune_middle_afm_api.json'
+        self.assertTrue(api_path.exists())
+        api = json.loads(api_path.read_text('utf-8'))
+        ui = json.loads(api_path.with_name('moss_block_tune_middle_afm_ui.json').read_text('utf-8'))
+        self.assertEqual(api['31']['inputs']['model'], ['43', 0])
+        self.assertEqual(api['43']['inputs']['model'], ['42', 0])
+        self.assertEqual(api['42']['inputs']['application'], 'middle_30_70')
+        tune_node = self.node_class('MossImageBlockTunePreset')
+        afm_node = self.node_class('MossImageAFM')
+        tuned = tune_node.execute(self.model(True, num_layers=42), **{
+            key: value for key, value in api['42']['inputs'].items() if key != 'model'}).result[0]
+        combined = afm_node.execute(tuned, **{
+            key: value for key, value in api['43']['inputs'].items() if key != 'model'}).result[0]
+        self.assertEqual(len(combined.get_all_wrappers(WrappersMP.OUTER_SAMPLE)), 1)
+        for node_id, node_class in ((42, tune_node), (43, afm_node)):
+            values = [api[str(node_id)]['inputs'][control.id]
+                      for control in node_class.define_schema().inputs if control.id != 'model']
+            ui_node = next(n for n in ui['nodes'] if n['id'] == node_id)
+            self.assertEqual(ui_node['widgets_values'], values)
+        self.assertTrue(any(link[1:5] == [42, 0, 43, 0] for link in ui['links']))
+        self.assertTrue(any(link[1:5] == [43, 0, 31, 0] for link in ui['links']))
 
     def test_k_balance_metadata_is_rejected(self):
         from afm.block_tune import install_block_tune

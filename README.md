@@ -49,13 +49,28 @@ Q/KとBlock 0～33は後半Block比較では変更しません。
 生成進行率0.30～0.70だけプリセット全体を適用する`middle_30_70`、
 同じ計算経路で倍率1.0にする`identity_control`を選べます。
 25 stepsの中盤は9～17ステップ目（0始まり8～16）です。区間外は全倍率1.0で、
-静的な画像②設定を残しません。時間指定モードはEuler/ER-SDEのT2I専用で、
-AFM・参照画像とは併用できません。`static`は従来どおりAFMの前へ接続できます。
+静的な画像②設定を残しません。通常の使用は`static`を選び、時間による差を調べる場合に
+同じpreset・AFM設定で`full_run`と`middle_30_70`を比較します。`full_run`は
+`static`より強い設定ではなく、同じ倍率を全ステップへ適用しながら時間比較用の進行管理を使います。
+`identity_control`はBlock Tuneの倍率だけを1.0にする対照で、後段のAFMは設定どおり動作します。
+
+全applicationでAFMを併用できます。接続順は次のとおりです。
+
+```text
+Load Diffusion Model → LoRA（任意）→ MOSS Image Block Tune Preset → MOSS Image AFM → KSampler
+```
+
+時間指定モードはBlock TuneとAFMで1つのサンプラーステップ進行を共有します。
+Block Tuneの`application`と、AFMのblock・時間区間・CFG分岐は独立して作用します。
+`static`以外はEuler/ER-SDEのT2I専用で、参照画像入力には対応しません。
 
 全プリセット、2×2の後半Block比較、時間比較の注意点、UI/API例は
 [画像別プリセットと質感比較](docs/block-tune-presets.md) を参照してください。
 比較用ワークフローは`examples/block_tune_texture/`にあります。画像②の基準、6派生、
 画像③と4種類の`application`を組み合わせた32組のUI/APIペアです。
+中盤限定Block TuneとAFMを正しい順序で接続した例は
+`examples/moss_block_tune_middle_afm_ui.json`（UI）と
+`examples/moss_block_tune_middle_afm_api.json`（API）です。
 ユーザー提供のビーチバレーworkflowから、full `flux2-vae.safetensors`、16:9、
 25 steps、CFG 2.5、固定seedを保持しています。古い個別例のsmall VAEとは別条件です。
 以下の3種類は従来のAFM用 `block_scope` です。

@@ -142,6 +142,7 @@ def install_afm(model, config):
     import folder_paths
     from comfy.ldm.modules.attention import optimized_attention
     from comfy.patcher_extension import WrappersMP, get_all_wrappers
+    from .block_tune_window import WINDOW_KEY, qualified_window
 
     caps = detect_native_moss(model)
     first_scope = parse_block_scope(config.block_scope, caps.blocks)
@@ -166,13 +167,19 @@ def install_afm(model, config):
                 or existing_blocks[key].multiplier != factor
                 for key, factor in expected.items()):
             raise ValueError("MOSS Residual patches do not match their configuration")
-    if (model.get_all_wrappers(WrappersMP.DIFFUSION_MODEL)
+    window = qualified_window(model)
+    if window is None and (model.get_all_wrappers(WrappersMP.DIFFUSION_MODEL)
             or get_all_wrappers(WrappersMP.DIFFUSION_MODEL, options)):
         raise ValueError("Existing diffusion wrapper requires separate AFM qualification")
     labels = " ".join(str(k).lower() for k in options)
     if any(key in labels for key in ("cache", "spectrum", "compile", "multigpu")):
         raise ValueError("Model skip-cache/compile/multi-GPU is not qualified for AFM")
     clone = model.clone()
+    if window is not None:
+        # The window's diffusion gate reads the same RunState as AFM. Only AFM
+        # owns the callback clock; retain the input model's standalone wrappers.
+        clone.remove_wrappers_with_key(WrappersMP.OUTER_SAMPLE, WINDOW_KEY)
+        clone.remove_attachments(WINDOW_KEY)
     clone.model_options["transformer_options"][CONFIG_KEY] = config
     clone.add_wrapper_with_key(WrappersMP.OUTER_SAMPLE, "moss_afm",
                                make_outer_wrapper(config, validate_sampler,

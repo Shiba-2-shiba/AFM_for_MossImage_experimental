@@ -1,5 +1,28 @@
 # 2026-11-06 Block Tune質感比較の検証
 
+## AFM併用修正版
+
+ユーザーのログで`Existing diffusion wrapper requires separate AFM qualification`を確認。
+時間指定Block Tuneが登録するwrapperをAFMが一律に拒否していたことを再現テストで確認した。
+既知のBlock Tune wrapperペアだけを検証して受け入れ、AFM併用cloneでは進行管理を1つに統合。
+元のBlock Tuneモデルの単独実行、未知・破損wrapperの拒否、参照画像の制限は保持した。
+
+`static`、`full_run`、`middle_30_70`、`identity_control`はすべて後段AFMと併用可能。
+Block Tuneの区間とAFMの区間・block・CFG分岐は独立し、`identity_control`でもAFMは動作する。
+
+初版と同じUTF-8/ネイティブCPUテスト条件で全体を再実行:
+**161 passed, 419 subtests passed**。コンパイル検査、`git diff --check`も成功。
+
+- 小型MOSSで、中盤＋AFMが区間内は全区間＋AFM、区間外は恒等対照＋AFMと一致。
+- AFM edit/observe/off/strength=0、positive-only CFG、2区間と間隙を確認。
+- 実Euler/ER-SDEで共有clockを駆動し、例外後のoptions/gate復元、再実行、単独モデル復元を確認。
+- 欠落・置換・追加・legacy wrapperを拒否する回帰テストを追加。
+- `moss_block_tune_middle_afm_ui.json` / `_api.json`は実ノードのschemaとexecuteで検証。
+  UIの12ノード・13リンクの相互参照も確認。
+- 実サイズGPU生成とブラウザーでの読込操作は未実施。
+
+以下は初版（時間指定Block TuneとAFMの併用対応前）の検証記録です。
+
 ## 追加内容
 
 - image2派生6種: 全体V=.90/1.00、Block34–41 V=.90/1.00、

@@ -1,11 +1,39 @@
 """Sampler-step windows for Block Tune, with a per-execution scaling gate."""
 from contextvars import ContextVar
 from dataclasses import dataclass
+from typing import Callable
 
 from .runtime import RUN_KEY, RunState
 
 
 APPLICATION_MODES = ('static', 'full_run', 'middle_30_70', 'identity_control')
+WINDOW_KEY = 'moss_block_tune_window'
+
+
+@dataclass(frozen=True)
+class WindowRegistration:
+    outer: Callable
+    diffusion: Callable
+
+
+def qualified_window(model):
+    """Recognize only the intact standalone window pair before sharing its clock."""
+    from comfy.patcher_extension import WrappersMP
+
+    registration = model.get_attachment(WINDOW_KEY)
+    kinds = (WrappersMP.OUTER_SAMPLE, WrappersMP.DIFFUSION_MODEL)
+    if registration is None and not any(model.get_wrappers(kind, WINDOW_KEY) for kind in kinds):
+        return None
+    if type(registration) is not WindowRegistration:
+        raise ValueError('Block Tune window registration is missing or unsupported')
+    expected = {WrappersMP.OUTER_SAMPLE: {WINDOW_KEY: [registration.outer]},
+                WrappersMP.DIFFUSION_MODEL: {WINDOW_KEY: [registration.diffusion]}}
+    actual = {kind: {key: values for key, values in groups.items() if values}
+              for kind, groups in model.wrappers.items() if any(groups.values())}
+    legacy = model.model_options.get('transformer_options', {}).get('wrappers', {})
+    if actual != expected or any(values for groups in legacy.values() for values in groups.values()):
+        raise ValueError('AFM requires the intact Block Tune window pair without extra wrappers')
+    return registration
 
 
 @dataclass(frozen=True)
@@ -50,8 +78,8 @@ def install_window(clone, application, gate):
     from .runtime import make_outer_wrapper
 
     # Reuse the qualified Euler/ER-SDE callback clock and its cleanup, without AFM edits.
-    clone.add_wrapper_with_key(WrappersMP.OUTER_SAMPLE, 'moss_block_tune_window',
-                               make_outer_wrapper(AFMConfig(logging='off'), validate_sampler,
-                                                  lambda: None))
-    clone.add_wrapper_with_key(WrappersMP.DIFFUSION_MODEL, 'moss_block_tune_window',
-                               make_window_wrapper(application, gate))
+    outer = make_outer_wrapper(AFMConfig(logging='off'), validate_sampler, lambda: None)
+    diffusion = make_window_wrapper(application, gate)
+    clone.add_wrapper_with_key(WrappersMP.OUTER_SAMPLE, WINDOW_KEY, outer)
+    clone.add_wrapper_with_key(WrappersMP.DIFFUSION_MODEL, WINDOW_KEY, diffusion)
+    clone.set_attachments(WINDOW_KEY, WindowRegistration(outer, diffusion))
