@@ -35,10 +35,29 @@ API JSONはUIへ読み込む形式ではありません。手元のUI workflow�
 
 ## プリセットと検証状況
 
-画像①・②のブロック強度/QKVを使う専用ノード **MOSS Image Block Tune Preset** を追加しました。
+画像①・②・③のブロック強度/QKVを使う専用ノード **MOSS Image Block Tune Preset** を追加しました。
 `image_1_individual_qkv` は個別QKV、`image_2_global_qkv` は全ブロック共通QKVです。
 ①の未確認QKVも指定により1.70 / 1.00 / 0.80、未確認のブロック強度は1.0としています。
-設定JSON・接続方法・UIワークフローは [画像別プリセット](docs/block-tune-presets.md) を参照してください。
+`image_3_individual_qkv_partial`は、画像③で見えるQKV（Block 0～14・21～35）と
+Block強度（0～15・21～36）を使います。未確認QKVの15～20・36～41と、
+未確認強度の16～20・37～41は1.0で補完し、未表示のHeadも1.0です。
+画像②を基準に、Vを全体またはBlock 34～41だけ0.90/1.00へ戻す条件と、
+Block 34～41の`proj.o`・`proj.ffn_down`強度を1.00へ戻す条件も選べます。
+Q/KとBlock 0～33は後半Block比較では変更しません。
+
+`application`では従来の`static`に加え、時間比較用の`full_run`、
+生成進行率0.30～0.70だけプリセット全体を適用する`middle_30_70`、
+同じ計算経路で倍率1.0にする`identity_control`を選べます。
+25 stepsの中盤は9～17ステップ目（0始まり8～16）です。区間外は全倍率1.0で、
+静的な画像②設定を残しません。時間指定モードはEuler/ER-SDEのT2I専用で、
+AFM・参照画像とは併用できません。`static`は従来どおりAFMの前へ接続できます。
+
+全プリセット、2×2の後半Block比較、時間比較の注意点、UI/API例は
+[画像別プリセットと質感比較](docs/block-tune-presets.md) を参照してください。
+比較用ワークフローは`examples/block_tune_texture/`にあります。画像②の基準、6派生、
+画像③と4種類の`application`を組み合わせた32組のUI/APIペアです。
+ユーザー提供のビーチバレーworkflowから、full `flux2-vae.safetensors`、16:9、
+25 steps、CFG 2.5、固定seedを保持しています。古い個別例のsmall VAEとは別条件です。
 以下の3種類は従来のAFM用 `block_scope` です。
 
 既定値は **`block_scope=0-2`** です。ノードの選択肢は次の3種類です。

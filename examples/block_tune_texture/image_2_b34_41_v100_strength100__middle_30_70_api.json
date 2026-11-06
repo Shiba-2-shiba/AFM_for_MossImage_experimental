@@ -1,0 +1,159 @@
+{
+  "9": {
+    "inputs": {
+      "filename_prefix": "moss_block_tune_texture/image_2_b34_41_v100_strength100__middle_30_70",
+      "images": [
+        "37",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "画像を保存"
+    }
+  },
+  "19": {
+    "inputs": {
+      "aspect_ratio": "16:9 (Widescreen)",
+      "megapixels": 1.0,
+      "multiple": 16
+    },
+    "class_type": "ResolutionSelector",
+    "_meta": {
+      "title": "解像度セレクター"
+    }
+  },
+  "28": {
+    "inputs": {
+      "unet_name": "moodyVividMixMossImage_v2225STEPSCFG3BF16_int8.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "拡散モデルを読み込む"
+    }
+  },
+  "29": {
+    "inputs": {
+      "text": "Exactly two adult women occupy a photorealistic beach-volleyball photograph on the same side of a sunlit sand court. The lead protagonist, a young adult woman with a short black bob held behind her ears, fills the sharp foreground in a readable three-quarter facial view as one ball meets her joined forearms. She wears a turquoise top and navy shorts. Her chestnut-ponytailed adult partner, dressed distinctly in a coral top and sand-gold shorts, stands several meters farther back, ready to cover. A low diagonal camera frames both complete bodies, one ball, their court half, and the net edge.\n\nThe lead settles into a strong dig through both feet pressed into loose sand, her left foot slightly forward, ankles flexed, knees deeply bent, and hips lowered over a stable, wide base. Her spine lengthens forward from a braced pelvis. Interlaced fingers draw her thumbs parallel, elbows extend, and the flat inner surfaces of both forearms receive the ball just above her wrists. Her shoulders rise gently to guide the rebound. She watches the contact with sparkling eyes, sunlit lifted cheeks, relaxed brows, and a delighted effort smile. Real skin shows warm tonal variation, salt-bright highlights, fine sweat at her temples, and grains of sand clinging naturally to her shins.\n\nThe partner owns a clear cover role: her right foot presses into a small sand ridge, left foot steps laterally toward the projected rebound, both knees flex, and her torso leans forward. Her hands remain open at thigh height with fingers relaxed and ready, while her head turns toward the ball. She wears an upbeat, confident smile with attentive eyes and raised cheeks. The shared instant remains coherent as the single ball compresses subtly against the lead’s joined forearms, the lead redirects it upward, and the partner advances toward the expected second touch with balanced arms and an active stance.\n\nThe real beach setting includes sculpted footprints, sparkling quartz grains, taut boundary tape, one net, weathered posts, blue water, dune grass, and a bright sky, with environmental scenery surrounding exactly two athletes. Sunlight reveals woven fabric, matte ball panels, damp skin sheen, airborne sand flecks, and soft-edged shadows. Add exactly one Japanese graphical sound overlay reading ボフッ in the clear sand-colored space beside the forearm contact, separated generously from ball, wrists, face, torso, and net. Render it medium-size and bold in rounded hand-drawn katakana with broad curves, softly swelling corners, short round terminals, relaxed spacing, a gently dipping baseline, coral fill, and a thin dark brown outline. The visible typography consists of the single sound-effect word.",
+      "clip": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIPテキストエンコード（プロンプト）"
+    }
+  },
+  "30": {
+    "inputs": {
+      "clip_name": "qwen3.5_9b_int8_convrot.safetensors",
+      "type": "moss_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "CLIPを読み込む"
+    }
+  },
+  "31": {
+    "inputs": {
+      "seed": 333599710072681,
+      "steps": 25,
+      "cfg": 2.5,
+      "sampler_name": "er_sde",
+      "scheduler": "simple",
+      "denoise": 1.0,
+      "model": [
+        "42",
+        0
+      ],
+      "positive": [
+        "29",
+        0
+      ],
+      "negative": [
+        "36",
+        0
+      ],
+      "latent_image": [
+        "35",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Kサンプラー"
+    }
+  },
+  "32": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAEを読み込む"
+    }
+  },
+  "35": {
+    "inputs": {
+      "width": [
+        "19",
+        0
+      ],
+      "height": [
+        "19",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  },
+  "36": {
+    "inputs": {
+      "text": "worst quality, bad anatomy, watermark, jpeg artifact, ugly face, painting,",
+      "clip": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIPテキストエンコード（プロンプト）"
+    }
+  },
+  "37": {
+    "inputs": {
+      "samples": [
+        "31",
+        0
+      ],
+      "vae": [
+        "32",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAEデコード"
+    }
+  },
+  "42": {
+    "inputs": {
+      "preset": "image_2_b34_41_v100_strength100",
+      "model": [
+        "28",
+        0
+      ],
+      "application": "middle_30_70"
+    },
+    "class_type": "MossImageBlockTunePreset",
+    "_meta": {
+      "title": "MOSS Image Block Tune Preset"
+    }
+  }
+}

@@ -9,6 +9,7 @@ from .afm.residual import ResidualConfig, ResidualTestConfig, install_residual
 from .afm.k_balance import install_k_balance, parse_k_blocks
 from .afm.k_balance_math import KBalanceConfig, STRENGTH_LIMIT, MAX_CHANGE_LIMIT
 from .afm.block_tune import PRESET_NAMES, install_block_tune
+from .afm.block_tune_window import APPLICATION_MODES
 
 
 class MossImageAFM(io.ComfyNode):
@@ -207,19 +208,27 @@ class MossImageBlockTunePreset(io.ComfyNode):
         return io.Schema(
             node_id="MossImageBlockTunePreset", display_name="MOSS Image Block Tune Preset",
             category="model/patches/moss_image",
-            description="画像①・②を別プリセットで適用。LoRAの後、AFMの前へ接続。",
+            description="画像①・②・③と質感検証プリセット。LoRAの後へ接続。時間指定モードはAFM併用不可。",
             inputs=[
                 io.Model.Input("model"),
                 io.Combo.Input("preset", options=["off", *PRESET_NAMES], default=PRESET_NAMES[0],
                                tooltip="①は個別QKV、未確認QKVは1.70/1.00/0.80、未確認強度は1。"
-                                       "②は全ブロック共通QKV=1.70/1.00/0.80。"),
+                                       "②は全ブロック共通QKV=1.70/1.00/0.80。"
+                                       "b34_41は後半8ブロックだけ変更。strengthはOとFFN-down。"
+                                       "③partialは見えていない値とHeadを1.00で補完。"),
+                io.Combo.Input("application", options=list(APPLICATION_MODES), default="static",
+                               optional=True,
+                               tooltip="static=従来の全区間適用。full_run=時間比較用の全区間。"
+                                       "middle_30_70=生成進行率0.30〜0.70だけ適用。"
+                                       "identity_control=同じ計算経路で倍率変更なし。"
+                                       "時間比較はEuler/ER-SDE、参照画像なし、AFMなしで使用。"),
             ],
             outputs=[io.Model.Output(), io.String.Output("report")],
         )
 
     @classmethod
-    def execute(cls, model, preset=PRESET_NAMES[0]):
-        result, report = install_block_tune(model, preset)
+    def execute(cls, model, preset=PRESET_NAMES[0], application="static"):
+        result, report = install_block_tune(model, preset, application)
         return io.NodeOutput(result, json.dumps(report, ensure_ascii=False, allow_nan=False))
 
 

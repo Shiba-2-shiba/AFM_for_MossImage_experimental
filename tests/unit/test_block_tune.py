@@ -4,6 +4,75 @@ import torch
 
 
 class BlockTuneTests(unittest.TestCase):
+    def test_third_screenshot_tracks_visible_and_missing_values_separately(self):
+        from afm.block_tune import PRESET_NAMES, load_preset
+        name = 'image_3_individual_qkv_partial'
+        self.assertIn(name, PRESET_NAMES)
+        data = load_preset(name)
+        self.assertEqual(data['blocks'][0], {
+            'block': 0, 'strength': 1.05, 'q': 1.02, 'k': .99, 'v': 1.01,
+            'qkv_observed': True, 'strength_observed': True})
+        self.assertEqual(data['blocks'][21]['q'], .80)
+        self.assertEqual(data['blocks'][21]['k'], .79)
+        self.assertEqual(data['blocks'][29]['q'], .91)
+        self.assertEqual(data['blocks'][35]['v'], 1.05)
+        self.assertEqual(data['blocks'][15]['strength'], .85)
+        self.assertEqual(data['blocks'][36]['strength'], 1.05)
+        self.assertEqual([r['block'] for r in data['blocks'] if not r['qkv_observed']],
+                         [*range(15, 21), *range(36, 42)])
+        self.assertEqual([r['block'] for r in data['blocks'] if not r['strength_observed']],
+                         [*range(16, 21), *range(37, 42)])
+        for row in data['blocks']:
+            if not row['qkv_observed']:
+                self.assertEqual([row[k] for k in ('q', 'k', 'v')], [1., 1., 1.])
+            if not row['strength_observed']:
+                self.assertEqual(row['strength'], 1.)
+        self.assertFalse(data['head_observed'])
+        self.assertEqual(data['head'], 1.)
+
+    def test_image2_variants_isolate_requested_blocks_and_projections(self):
+        from afm.block_tune import PRESET_NAMES, load_preset, projection_scales
+        baseline = load_preset('image_2_global_qkv')
+        cases = (
+            ('image_2_global_v090', 0, .9, None),
+            ('image_2_global_v100', 0, 1., None),
+            ('image_2_b34_41_v090', 34, .9, None),
+            ('image_2_b34_41_v100', 34, 1., None),
+            ('image_2_b34_41_strength100', 34, None, 1.),
+            ('image_2_b34_41_v100_strength100', 34, 1., 1.),
+        )
+        for name, first, v, strength in cases:
+            with self.subTest(preset=name):
+                self.assertIn(name, PRESET_NAMES)
+                data = load_preset(name)
+                self.assertEqual(data['name'], name)
+                self.assertEqual(data['head'], 1.)
+                self.assertEqual(data['blocks'][:first], baseline['blocks'][:first])
+                for row, original in zip(data['blocks'], baseline['blocks']):
+                    self.assertEqual((row['q'], row['k']), (1.7, 1.))
+                    self.assertEqual(row['v'], v if row['block'] >= first and v is not None
+                                     else original['v'])
+                    self.assertEqual(row['strength'], strength
+                                     if row['block'] >= first and strength is not None
+                                     else original['strength'])
+                for fused in (False, True):
+                    base_plan = projection_scales(baseline, fused)
+                    plan = projection_scales(data, fused)
+                    for index in range(first):
+                        prefix = f'layers.{index}.proj.'
+                        self.assertEqual({k: v for k, v in plan.items() if k.startswith(prefix)},
+                                         {k: v for k, v in base_plan.items() if k.startswith(prefix)})
+                    if strength == 1:
+                        self.assertEqual(plan['layers.34.proj.o'], (1.,))
+                        self.assertEqual(plan['layers.41.proj.ffn_down'], (1.,))
+                    if v == 1 and not fused:
+                        self.assertEqual(plan['layers.34.proj.v'], (1.,))
+                        self.assertEqual(plan['layers.41.proj.v'], (1.,))
+                    self.assertEqual(set(plan), set(base_plan))
+                # Returned data is private; editing one comparison cannot change another.
+                data['blocks'][0]['v'] = 0
+                self.assertEqual(load_preset('image_2_global_qkv'), baseline)
+
     def test_screenshot_values_and_unknowns(self):
         from afm.block_tune import load_preset
         data = load_preset()

@@ -71,16 +71,104 @@ class BlockTuneNativeTests(unittest.TestCase):
             install_block_tune(base, 'invalid')
 
     def test_second_preset_schema_and_execution(self):
+        from afm.block_tune import PRESET_NAMES
         node = self.node_class('MossImageBlockTunePreset')
         schema = node.define_schema()
         self.assertEqual(schema.node_id, 'MossImageBlockTunePreset')
         self.assertEqual(schema.inputs[1].options,
-                         ['off', 'image_1_individual_qkv', 'image_2_global_qkv'])
+                         ['off', *PRESET_NAMES])
+        self.assertEqual(schema.inputs[2].id, 'application')
+        self.assertEqual(schema.inputs[2].default, 'static')
+        self.assertEqual(schema.inputs[2].options,
+                         ['static', 'full_run', 'middle_30_70', 'identity_control'])
         result = node.execute(self.model(True, num_layers=42), 'image_2_global_qkv')
         tuned = result.result[0]
         for index in range(42):
             wrapper = tuned.weight_wrapper_patches[f'diffusion_model.layers.{index}.proj.qkv.weight'][0]
             self.assertEqual(wrapper.factors, (1.7, 1., .8))
+
+    def test_window_matches_static_inside_identity_outside_and_restores(self):
+        from afm.block_tune import install_block_tune
+        from afm.config import AFMConfig
+        from afm.runtime import RUN_KEY, RunState
+        from comfy.patcher_extension import WrappersMP
+        from tests.unit.test_runtime import FakeExecutor
+        for fused in (False, True):
+            with self.subTest(fused=fused), torch.inference_mode():
+                base = self.model(fused, num_layers=42)
+                native = base.model.diffusion_model
+                x, t, text = torch.randn(1, 8, 2, 3), torch.ones(1), torch.randn(1, 4, 16)
+                before = native(x.clone(), t, text, {})
+                outputs, targets = {}, []
+                for application in ('static', 'full_run', 'identity_control', 'middle_30_70'):
+                    tuned, report = install_block_tune(base, 'image_2_b34_41_v100_strength100',
+                                                       application=application)
+                    self.assertEqual(report['application'], application)
+                    targets.append(set(tuned.weight_wrapper_patches))
+                    tuned.patch_model(device_to=torch.device('cpu'), load_weights=True)
+                    try:
+                        for step in (0, 5, 10):
+                            if application == 'static':
+                                out = native(x.clone(), t, text, {})
+                            else:
+                                wrapper, = tuned.get_all_wrappers(WrappersMP.DIFFUSION_MODEL)
+                                state = RunState(11, AFMConfig(logging='off'), step_index=step)
+                                out = wrapper(FakeExecutor(None, native), x.clone(), t, text,
+                                              {RUN_KEY: state})
+                            outputs[application, step] = out
+                    finally:
+                        tuned.unpatch_model(device_to=torch.device('cpu'))
+                self.assertTrue(all(keys == targets[0] for keys in targets))
+                for step in (0, 5, 10):
+                    torch.testing.assert_close(outputs['full_run', step], outputs['static', step],
+                                               rtol=0, atol=0)
+                    torch.testing.assert_close(outputs['identity_control', step], before,
+                                               rtol=0, atol=0)
+                    expected = outputs['static', step] if step == 5 else before
+                    torch.testing.assert_close(outputs['middle_30_70', step], expected,
+                                               rtol=0, atol=0)
+                base.patch_model(device_to=torch.device('cpu'), load_weights=True)
+                try:
+                    torch.testing.assert_close(native(x.clone(), t, text, {}), before, rtol=0, atol=0)
+                finally:
+                    base.unpatch_model(device_to=torch.device('cpu'))
+
+    def test_timed_dynamic_uses_native_classic_delegate(self):
+        from comfy.model_patcher import ModelPatcher, ModelPatcherDynamic
+        from afm.block_tune import install_block_tune
+        class Harness(ModelPatcher):
+            def is_dynamic(self):
+                return True
+            get_non_dynamic_delegate = ModelPatcherDynamic.get_non_dynamic_delegate
+        base = self.model(True, num_layers=42)
+        dynamic = Harness(base.model, base.load_device, base.offload_device, size=1)
+        dynamic.non_dynamic_delegate_model = None
+        reloads = []
+        def reload_model(disable_dynamic=False):
+            self.assertTrue(disable_dynamic)
+            reloads.append(True)
+            return self.model(True, num_layers=42)
+        dynamic.cached_patcher_init = (reload_model, ())
+        dynamic.model_options['test_option'] = 'preserve'
+        tuned, report = install_block_tune(dynamic, 'image_2_global_qkv', 'middle_30_70')
+        self.assertFalse(tuned.is_dynamic())
+        self.assertTrue(report['dynamic_delegate_used'])
+        self.assertEqual(tuned.model_options['test_option'], 'preserve')
+        self.assertEqual(reloads, [True])
+        self.assertFalse(dynamic.weight_wrapper_patches)
+
+    def test_timed_afm_conflict_and_invalid_application_are_explicit(self):
+        from afm.block_tune import install_block_tune
+        from afm.adapter import install_afm
+        from afm.config import AFMConfig
+        base = self.model(True, num_layers=42)
+        timed, _ = install_block_tune(base, 'image_2_global_qkv', 'middle_30_70')
+        with self.assertRaises(ValueError):
+            install_afm(timed, AFMConfig(logging='off'))
+        with self.assertRaises(ValueError):
+            install_block_tune(timed)
+        with self.assertRaises(ValueError):
+            install_block_tune(base, 'image_2_global_qkv', 'invalid')
 
     def test_legacy_diffusion_wrapper_is_rejected(self):
         from comfy.patcher_extension import WrappersMP, add_wrapper

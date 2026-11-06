@@ -1,0 +1,616 @@
+{
+  "id": "7f48b40e-065d-4024-9430-9b8d5f3107f9",
+  "revision": 0,
+  "last_node_id": 42,
+  "last_link_id": 20,
+  "nodes": [
+    {
+      "id": 28,
+      "type": "UNETLoader",
+      "pos": [
+        -597.9532988578053,
+        144.88380200425647
+      ],
+      "size": [
+        350,
+        260
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "slot_index": 0,
+          "links": [
+            19
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "moodyVividMixMossImage_v2225STEPSCFG3BF16_int8.safetensors",
+        "default"
+      ],
+      "widgets_values_named": {
+        "unet_name": "moodyVividMixMossImage_v2225STEPSCFG3BF16_int8.safetensors",
+        "weight_dtype": "default"
+      }
+    },
+    {
+      "id": 30,
+      "type": "CLIPLoader",
+      "pos": [
+        780,
+        0
+      ],
+      "size": [
+        350,
+        260
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "slot_index": 0,
+          "links": [
+            2,
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen3.5_9b_int8_convrot.safetensors",
+        "moss_image",
+        "default"
+      ],
+      "widgets_values_named": {
+        "clip_name": "qwen3.5_9b_int8_convrot.safetensors",
+        "type": "moss_image",
+        "device": "default"
+      }
+    },
+    {
+      "id": 29,
+      "type": "CLIPTextEncode",
+      "pos": [
+        28.067140864252995,
+        -59.53597071073198
+      ],
+      "size": [
+        505.55691655246164,
+        389.6307942246177
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            7
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "Exactly two adult women occupy a photorealistic beach-volleyball photograph on the same side of a sunlit sand court. The lead protagonist, a young adult woman with a short black bob held behind her ears, fills the sharp foreground in a readable three-quarter facial view as one ball meets her joined forearms. She wears a turquoise top and navy shorts. Her chestnut-ponytailed adult partner, dressed distinctly in a coral top and sand-gold shorts, stands several meters farther back, ready to cover. A low diagonal camera frames both complete bodies, one ball, their court half, and the net edge.\n\nThe lead settles into a strong dig through both feet pressed into loose sand, her left foot slightly forward, ankles flexed, knees deeply bent, and hips lowered over a stable, wide base. Her spine lengthens forward from a braced pelvis. Interlaced fingers draw her thumbs parallel, elbows extend, and the flat inner surfaces of both forearms receive the ball just above her wrists. Her shoulders rise gently to guide the rebound. She watches the contact with sparkling eyes, sunlit lifted cheeks, relaxed brows, and a delighted effort smile. Real skin shows warm tonal variation, salt-bright highlights, fine sweat at her temples, and grains of sand clinging naturally to her shins.\n\nThe partner owns a clear cover role: her right foot presses into a small sand ridge, left foot steps laterally toward the projected rebound, both knees flex, and her torso leans forward. Her hands remain open at thigh height with fingers relaxed and ready, while her head turns toward the ball. She wears an upbeat, confident smile with attentive eyes and raised cheeks. The shared instant remains coherent as the single ball compresses subtly against the lead’s joined forearms, the lead redirects it upward, and the partner advances toward the expected second touch with balanced arms and an active stance.\n\nThe real beach setting includes sculpted footprints, sparkling quartz grains, taut boundary tape, one net, weathered posts, blue water, dune grass, and a bright sky, with environmental scenery surrounding exactly two athletes. Sunlight reveals woven fabric, matte ball panels, damp skin sheen, airborne sand flecks, and soft-edged shadows. Add exactly one Japanese graphical sound overlay reading ボフッ in the clear sand-colored space beside the forearm contact, separated generously from ball, wrists, face, torso, and net. Render it medium-size and bold in rounded hand-drawn katakana with broad curves, softly swelling corners, short round terminals, relaxed spacing, a gently dipping baseline, coral fill, and a thin dark brown outline. The visible typography consists of the single sound-effect word."
+      ],
+      "widgets_values_named": {
+        "text": "Exactly two adult women occupy a photorealistic beach-volleyball photograph on the same side of a sunlit sand court. The lead protagonist, a young adult woman with a short black bob held behind her ears, fills the sharp foreground in a readable three-quarter facial view as one ball meets her joined forearms. She wears a turquoise top and navy shorts. Her chestnut-ponytailed adult partner, dressed distinctly in a coral top and sand-gold shorts, stands several meters farther back, ready to cover. A low diagonal camera frames both complete bodies, one ball, their court half, and the net edge.\n\nThe lead settles into a strong dig through both feet pressed into loose sand, her left foot slightly forward, ankles flexed, knees deeply bent, and hips lowered over a stable, wide base. Her spine lengthens forward from a braced pelvis. Interlaced fingers draw her thumbs parallel, elbows extend, and the flat inner surfaces of both forearms receive the ball just above her wrists. Her shoulders rise gently to guide the rebound. She watches the contact with sparkling eyes, sunlit lifted cheeks, relaxed brows, and a delighted effort smile. Real skin shows warm tonal variation, salt-bright highlights, fine sweat at her temples, and grains of sand clinging naturally to her shins.\n\nThe partner owns a clear cover role: her right foot presses into a small sand ridge, left foot steps laterally toward the projected rebound, both knees flex, and her torso leans forward. Her hands remain open at thigh height with fingers relaxed and ready, while her head turns toward the ball. She wears an upbeat, confident smile with attentive eyes and raised cheeks. The shared instant remains coherent as the single ball compresses subtly against the lead’s joined forearms, the lead redirects it upward, and the partner advances toward the expected second touch with balanced arms and an active stance.\n\nThe real beach setting includes sculpted footprints, sparkling quartz grains, taut boundary tape, one net, weathered posts, blue water, dune grass, and a bright sky, with environmental scenery surrounding exactly two athletes. Sunlight reveals woven fabric, matte ball panels, damp skin sheen, airborne sand flecks, and soft-edged shadows. Add exactly one Japanese graphical sound overlay reading ボフッ in the clear sand-colored space beside the forearm contact, separated generously from ball, wrists, face, torso, and net. Render it medium-size and bold in rounded hand-drawn katakana with broad curves, softly swelling corners, short round terminals, relaxed spacing, a gently dipping baseline, coral fill, and a thin dark brown outline. The visible typography consists of the single sound-effect word."
+      }
+    },
+    {
+      "id": 36,
+      "type": "CLIPTextEncode",
+      "pos": [
+        0,
+        520
+      ],
+      "size": [
+        350,
+        260
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            8
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "worst quality, bad anatomy, watermark, jpeg artifact, ugly face, painting,"
+      ],
+      "widgets_values_named": {
+        "text": "worst quality, bad anatomy, watermark, jpeg artifact, ugly face, painting,"
+      }
+    },
+    {
+      "id": 19,
+      "type": "ResolutionSelector",
+      "pos": [
+        375.2038235027368,
+        667.2571636373591
+      ],
+      "size": [
+        350,
+        260
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "slot_index": 0,
+          "links": [
+            4
+          ]
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "slot_index": 1,
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ResolutionSelector"
+      },
+      "widgets_values": [
+        "16:9 (Widescreen)",
+        1,
+        16
+      ],
+      "widgets_values_named": {
+        "aspect_ratio": "16:9 (Widescreen)",
+        "megapixels": 1,
+        "multiple": 16
+      }
+    },
+    {
+      "id": 35,
+      "type": "EmptyFlux2LatentImage",
+      "pos": [
+        818.7899816232293,
+        660.5338950809983
+      ],
+      "size": [
+        350,
+        260
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": 4
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "slot_index": 0,
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyFlux2LatentImage"
+      },
+      "widgets_values": [
+        1024,
+        1024,
+        1
+      ],
+      "widgets_values_named": {
+        "width": 1024,
+        "height": 1024,
+        "batch_size": 1
+      }
+    },
+    {
+      "id": 31,
+      "type": "KSampler",
+      "pos": [
+        1170,
+        520
+      ],
+      "size": [
+        350,
+        262
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 20
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 7
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 8
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 9
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "slot_index": 0,
+          "links": [
+            10
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        333599710072681,
+        "fixed",
+        25,
+        2.5,
+        "er_sde",
+        "simple",
+        1
+      ],
+      "widgets_values_named": {
+        "seed": 333599710072681,
+        "control_after_generate": "fixed",
+        "steps": 25,
+        "cfg": 2.5,
+        "sampler_name": "er_sde",
+        "scheduler": "simple",
+        "denoise": 1
+      }
+    },
+    {
+      "id": 32,
+      "type": "VAELoader",
+      "pos": [
+        -33.70268406815876,
+        1061.620592525724
+      ],
+      "size": [
+        350,
+        260
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "slot_index": 0,
+          "links": [
+            11
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "flux2-vae.safetensors"
+      ],
+      "widgets_values_named": {
+        "vae_name": "flux2-vae.safetensors"
+      }
+    },
+    {
+      "id": 37,
+      "type": "VAEDecode",
+      "pos": [
+        390,
+        1040
+      ],
+      "size": [
+        350,
+        260
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 10
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "slot_index": 0,
+          "links": [
+            12
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      }
+    },
+    {
+      "id": 9,
+      "type": "SaveImage",
+      "pos": [
+        780,
+        1040
+      ],
+      "size": [
+        350,
+        270
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "slot_index": 0,
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "moss_block_tune_texture/image_2_b34_41_v100__identity_control"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "moss_block_tune_texture/image_2_b34_41_v100__identity_control"
+      }
+    },
+    {
+      "id": 42,
+      "type": "MossImageBlockTunePreset",
+      "pos": [
+        -290.35640610405034,
+        -4.617937565324695
+      ],
+      "size": [
+        470,
+        150
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 19
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            20
+          ]
+        },
+        {
+          "name": "report",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MossImageBlockTunePreset"
+      },
+      "widgets_values": [
+        "image_2_b34_41_v100",
+        "identity_control"
+      ],
+      "widgets_values_named": {
+        "preset": "image_2_b34_41_v100",
+        "application": "identity_control"
+      },
+      "title": "Block Tune: image_2_b34_41_v100 / identity_control"
+    }
+  ],
+  "links": [
+    [
+      2,
+      30,
+      0,
+      29,
+      0,
+      "CLIP"
+    ],
+    [
+      3,
+      30,
+      0,
+      36,
+      0,
+      "CLIP"
+    ],
+    [
+      4,
+      19,
+      0,
+      35,
+      0,
+      "INT"
+    ],
+    [
+      5,
+      19,
+      1,
+      35,
+      1,
+      "INT"
+    ],
+    [
+      7,
+      29,
+      0,
+      31,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      8,
+      36,
+      0,
+      31,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      9,
+      35,
+      0,
+      31,
+      3,
+      "LATENT"
+    ],
+    [
+      10,
+      31,
+      0,
+      37,
+      0,
+      "LATENT"
+    ],
+    [
+      11,
+      32,
+      0,
+      37,
+      1,
+      "VAE"
+    ],
+    [
+      12,
+      37,
+      0,
+      9,
+      0,
+      "IMAGE"
+    ],
+    [
+      19,
+      28,
+      0,
+      42,
+      0,
+      "MODEL"
+    ],
+    [
+      20,
+      42,
+      0,
+      31,
+      0,
+      "MODEL"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "workflow_description": "Source: edit_00001__20261106-050649_1523089_7612105a.png; disconnected nodes removed, generation settings preserved.",
+    "ds": {
+      "scale": 0.9928134584434459,
+      "offset": [
+        650.774993092607,
+        199.11839551029666
+      ]
+    },
+    "frontendVersion": "1.58.7",
+    "block_tune_comparison": {
+      "preset": "image_2_b34_41_v100",
+      "application": "identity_control"
+    }
+  },
+  "version": 0.4
+}
