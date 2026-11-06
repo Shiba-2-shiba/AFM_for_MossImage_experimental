@@ -8,6 +8,7 @@ from .afm.config import AFMConfig
 from .afm.residual import ResidualConfig, ResidualTestConfig, install_residual
 from .afm.k_balance import install_k_balance, parse_k_blocks
 from .afm.k_balance_math import KBalanceConfig, STRENGTH_LIMIT, MAX_CHANGE_LIMIT
+from .afm.block_tune import PRESET_NAMES, install_block_tune
 
 
 class MossImageAFM(io.ComfyNode):
@@ -200,6 +201,29 @@ class MossImageKRowBalance(io.ComfyNode):
         return io.NodeOutput(result, json.dumps(report, ensure_ascii=False, allow_nan=False))
 
 
+class MossImageBlockTunePreset(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="MossImageBlockTunePreset", display_name="MOSS Image Block Tune Preset",
+            category="model/patches/moss_image",
+            description="画像①・②を別プリセットで適用。LoRAの後、AFMの前へ接続。",
+            inputs=[
+                io.Model.Input("model"),
+                io.Combo.Input("preset", options=["off", *PRESET_NAMES], default=PRESET_NAMES[0],
+                               tooltip="①は個別QKV、未確認QKVは1.70/1.00/0.80、未確認強度は1。"
+                                       "②は全ブロック共通QKV=1.70/1.00/0.80。"),
+            ],
+            outputs=[io.Model.Output(), io.String.Output("report")],
+        )
+
+    @classmethod
+    def execute(cls, model, preset=PRESET_NAMES[0]):
+        result, report = install_block_tune(model, preset)
+        return io.NodeOutput(result, json.dumps(report, ensure_ascii=False, allow_nan=False))
+
+
 class MossAFMExtension(ComfyExtension):
     async def get_node_list(self):
-        return [MossImageAFM, MossImageResidual, MossImageResidualTest, MossImageKRowBalance]
+        return [MossImageAFM, MossImageResidual, MossImageResidualTest, MossImageKRowBalance,
+                MossImageBlockTunePreset]

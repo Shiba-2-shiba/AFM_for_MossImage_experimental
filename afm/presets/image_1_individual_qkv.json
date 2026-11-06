@@ -1,0 +1,392 @@
+{
+  "name": "image_1_individual_qkv",
+  "mode": "residual",
+  "head": 1.0,
+  "global_qkv_reference": {
+    "q": 1.7,
+    "k": 1.0,
+    "v": 0.8
+  },
+  "qkv_policy": "individual visible values; missing values use global reference",
+  "notes": "Two distinct image presets. Global reference is not multiplied again. Image 1 unseen strengths and head default to 1.0. Screenshot values are rounded to two decimals.",
+  "blocks": [
+    {
+      "block": 0,
+      "strength": 1.0,
+      "q": 1.45,
+      "k": 1.54,
+      "v": 1.39,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 1,
+      "strength": 1.05,
+      "q": 1.02,
+      "k": 1.07,
+      "v": 0.96,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 2,
+      "strength": 1.05,
+      "q": 0.96,
+      "k": 0.96,
+      "v": 0.93,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 3,
+      "strength": 1.1,
+      "q": 0.58,
+      "k": 0.6,
+      "v": 0.61,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 4,
+      "strength": 1.1,
+      "q": 1.33,
+      "k": 1.39,
+      "v": 1.39,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 5,
+      "strength": 1.0,
+      "q": 1.32,
+      "k": 1.26,
+      "v": 1.27,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 6,
+      "strength": 0.95,
+      "q": 0.97,
+      "k": 1.0,
+      "v": 0.96,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 7,
+      "strength": 0.9,
+      "q": 0.99,
+      "k": 1.01,
+      "v": 1.03,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 8,
+      "strength": 1.1,
+      "q": 0.98,
+      "k": 0.99,
+      "v": 1.0,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 9,
+      "strength": 0.95,
+      "q": 1.31,
+      "k": 1.29,
+      "v": 1.35,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 10,
+      "strength": 1.0,
+      "q": 1.05,
+      "k": 1.09,
+      "v": 1.09,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 11,
+      "strength": 1.1,
+      "q": 0.96,
+      "k": 0.92,
+      "v": 0.98,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 12,
+      "strength": 1.0,
+      "q": 1.02,
+      "k": 1.07,
+      "v": 1.06,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 13,
+      "strength": 0.95,
+      "q": 0.94,
+      "k": 0.95,
+      "v": 0.98,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 14,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 15,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 16,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 17,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 18,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 19,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 20,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 21,
+      "strength": 1.1,
+      "q": 0.94,
+      "k": 0.99,
+      "v": 0.98,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 22,
+      "strength": 1.05,
+      "q": 1.0,
+      "k": 0.96,
+      "v": 1.03,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 23,
+      "strength": 1.05,
+      "q": 0.95,
+      "k": 0.94,
+      "v": 0.96,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 24,
+      "strength": 1.1,
+      "q": 0.96,
+      "k": 1.0,
+      "v": 1.02,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 25,
+      "strength": 1.0,
+      "q": 0.98,
+      "k": 1.02,
+      "v": 0.97,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 26,
+      "strength": 0.9,
+      "q": 1.03,
+      "k": 1.06,
+      "v": 1.01,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 27,
+      "strength": 1.1,
+      "q": 0.94,
+      "k": 0.9,
+      "v": 1.0,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 28,
+      "strength": 0.95,
+      "q": 1.44,
+      "k": 1.51,
+      "v": 1.42,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 29,
+      "strength": 1.1,
+      "q": 1.02,
+      "k": 1.02,
+      "v": 0.99,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 30,
+      "strength": 0.95,
+      "q": 0.96,
+      "k": 0.96,
+      "v": 0.96,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 31,
+      "strength": 1.05,
+      "q": 1.29,
+      "k": 1.27,
+      "v": 1.29,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 32,
+      "strength": 0.9,
+      "q": 1.04,
+      "k": 1.01,
+      "v": 1.01,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 33,
+      "strength": 0.95,
+      "q": 0.94,
+      "k": 0.99,
+      "v": 0.95,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 34,
+      "strength": 1.1,
+      "q": 1.29,
+      "k": 1.31,
+      "v": 1.33,
+      "qkv_observed": true,
+      "strength_observed": true
+    },
+    {
+      "block": 35,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 36,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 37,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 38,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 39,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 40,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    },
+    {
+      "block": 41,
+      "strength": 1.0,
+      "q": 1.7,
+      "k": 1.0,
+      "v": 0.8,
+      "qkv_observed": false,
+      "strength_observed": false
+    }
+  ]
+}

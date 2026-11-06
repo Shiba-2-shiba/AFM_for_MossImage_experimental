@@ -35,6 +35,12 @@ API JSONはUIへ読み込む形式ではありません。手元のUI workflow�
 
 ## プリセットと検証状況
 
+画像①・②のブロック強度/QKVを使う専用ノード **MOSS Image Block Tune Preset** を追加しました。
+`image_1_individual_qkv` は個別QKV、`image_2_global_qkv` は全ブロック共通QKVです。
+①の未確認QKVも指定により1.70 / 1.00 / 0.80、未確認のブロック強度は1.0としています。
+設定JSON・接続方法・UIワークフローは [画像別プリセット](docs/block-tune-presets.md) を参照してください。
+以下の3種類は従来のAFM用 `block_scope` です。
+
 既定値は **`block_scope=0-2`** です。ノードの選択肢は次の3種類です。
 
 | block_scope | 開発者の実機比較で選定した用途 |

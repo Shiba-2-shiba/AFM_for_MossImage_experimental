@@ -110,7 +110,8 @@ def install_residual(model, config: ResidualConfig | ResidualTestConfig):
     if config.bypass:
         return model.clone()
     options = model.model_options.get("transformer_options", {})
-    if CONFIG_KEY in options or RESIDUAL_CONFIG_KEY in options:
+    if (CONFIG_KEY in options or RESIDUAL_CONFIG_KEY in options
+            or "moss_block_tune_preset" in options):
         raise ValueError("Apply MOSS Residual once, before MOSS AFM")
     if ("optimized_attention_override" in options
             or options.get("patches_replace", {}).get("dit")):
